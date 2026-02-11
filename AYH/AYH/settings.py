@@ -21,13 +21,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-38eb&2sar0s=x(93uf$yxu7ab4s!*7$ayf0^z^*70y!8g7)h$b'
+# In Vercel/production, set DJANGO_SECRET_KEY in environment variables.
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-38eb&2sar0s=x(93uf$yxu7ab4s!*7$ayf0^z^*70y!8g7)h$b',  # fallback for local dev
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() == 'true'
 
-# In development: allow emulator (10.0.2.2), localhost, and any LAN IP (e.g. 192.168.x.x) for physical phone on WiFi
-ALLOWED_HOSTS = ["*"]
+# Hosts allowed to connect. On Vercel, *.vercel.app is used for preview/prod.
+ALLOWED_HOSTS = [
+    '127.0.0.1',
+    'localhost',
+    '.vercel.app',
+]
 
 
 # Application definition
@@ -51,6 +59,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Serve static files efficiently in production (e.g. Vercel serverless)
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',  # CORS - Must be before CommonMiddleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -130,6 +140,18 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = '/static/'
+
+# Where collectstatic will put compiled assets (used by WhiteNoise / Vercel)
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# App-level static folders (already used in this project)
+STATICFILES_DIRS = [
+    BASE_DIR / 'careapp' / 'static',
+]
+
+# Use WhiteNoise compressed storage for efficient static serving in production
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = str(BASE_DIR / 'media')
 
@@ -146,7 +168,6 @@ LOGOUT_REDIRECT_URL = '/accounts/login/'
 # CSRF Settings
 # Note: Set CSRF_COOKIE_SECURE to True when using HTTPS in production
 # For local development (HTTP), keep it False
-import os
 
 # Check if running in production (you can set this via environment variable)
 IS_PRODUCTION = os.environ.get('DJANGO_ENV') == 'production'
