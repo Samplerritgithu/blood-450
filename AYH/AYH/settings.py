@@ -27,12 +27,7 @@ SECRET_KEY = 'django-insecure-38eb&2sar0s=x(93uf$yxu7ab4s!*7$ayf0^z^*70y!8g7)h$b
 DEBUG = True
 
 # In development: allow emulator (10.0.2.2), localhost, and any LAN IP (e.g. 192.168.x.x) for physical phone on WiFi
-ALLOWED_HOSTS = [
-    '127.0.0.1',
-    'localhost',
-    '10.0.2.2',        # emulator
-    '192.168.1.25',    # YOUR laptop IP
-]
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
