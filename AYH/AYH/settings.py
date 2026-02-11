@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,16 +20,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+# Values are read from environment variables or from .env in project root.
 
 # SECURITY WARNING: keep the secret key used in production secret!
-# In Vercel/production, set DJANGO_SECRET_KEY in environment variables.
-SECRET_KEY = os.environ.get(
+SECRET_KEY = config(
     'DJANGO_SECRET_KEY',
-    'django-insecure-38eb&2sar0s=x(93uf$yxu7ab4s!*7$ayf0^z^*70y!8g7)h$b',  # fallback for local dev
+    default='django-insecure-38eb&2sar0s=x(93uf$yxu7ab4s!*7$ayf0^z^*70y!8g7)h$b',
 )
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() == 'true'
+DEBUG = config('DJANGO_DEBUG', default=True, cast=bool)
 
 # Hosts allowed to connect. On Vercel, *.vercel.app is used for preview/prod.
 ALLOWED_HOSTS = [
@@ -96,11 +97,17 @@ WSGI_APPLICATION = 'AYH.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+# On Vercel the filesystem is read-only, so we use /tmp for SQLite (ephemeral).
+# For production with real data, use PostgreSQL (e.g. Vercel Postgres, Supabase).
+if os.environ.get('VERCEL'):
+    _db_path = '/tmp/db.sqlite3'
+else:
+    _db_path = str(BASE_DIR / 'db.sqlite3')
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': _db_path,
     }
 }
 
@@ -169,8 +176,8 @@ LOGOUT_REDIRECT_URL = '/accounts/login/'
 # Note: Set CSRF_COOKIE_SECURE to True when using HTTPS in production
 # For local development (HTTP), keep it False
 
-# Check if running in production (you can set this via environment variable)
-IS_PRODUCTION = os.environ.get('DJANGO_ENV') == 'production'
+# Check if running in production (set DJANGO_ENV=production in .env or Vercel)
+IS_PRODUCTION = config('DJANGO_ENV', default='') == 'production'
 
 # CSRF Cookie Settings
 CSRF_COOKIE_SECURE = IS_PRODUCTION  # True in production with HTTPS, False in development
