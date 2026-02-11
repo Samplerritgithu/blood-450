@@ -8,6 +8,13 @@ https://docs.djangoproject.com/en/5.2/howto/deployment/wsgi/
 """
 
 import os
+import sys
+
+# Ensure Django project root is on Python path (needed when running on Vercel serverless)
+_wsgi_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_wsgi_dir)  # parent of AYH package = project root
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from django.core.wsgi import get_wsgi_application
 

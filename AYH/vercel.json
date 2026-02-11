@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "AYH/AYH/wsgi.py",
+      "src": "AYH/wsgi.py",
       "use": "@vercel/python"
     }
   ],
@@ -13,12 +13,12 @@
     },
     {
       "src": "/(.*)",
-      "dest": "AYH/AYH/wsgi.py"
+      "dest": "AYH/wsgi.py"
     }
   ],
   "env": {
     "DJANGO_SETTINGS_MODULE": "AYH.settings"
   },
-  "buildCommand": "cd AYH && python manage.py collectstatic --noinput"
+  "buildCommand": "python manage.py collectstatic --noinput"
 }
 
