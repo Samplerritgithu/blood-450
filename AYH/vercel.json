@@ -7,18 +7,12 @@
     }
   ],
   "routes": [
-    {
-      "src": "/static/(.*)",
-      "dest": "/staticfiles/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "AYH/wsgi.py"
-    }
+    { "src": "/static/(.*)", "dest": "/staticfiles/$1" },
+    { "src": "/(.*)", "dest": "AYH/wsgi.py" }
   ],
   "env": {
-    "DJANGO_SETTINGS_MODULE": "AYH.settings"
+    "DJANGO_SETTINGS_MODULE": "AYH.settings",
+    "SQLITE_DB_PATH": "/tmp/db.sqlite3"
   },
   "buildCommand": "python manage.py collectstatic --noinput"
 }
-

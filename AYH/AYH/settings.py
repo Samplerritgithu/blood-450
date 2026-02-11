@@ -97,12 +97,14 @@ WSGI_APPLICATION = 'AYH.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-# On Vercel the filesystem is read-only, so we use /tmp for SQLite (ephemeral).
+# On Vercel the filesystem is read-only; use /tmp (set in vercel.json or by VERCEL=1).
 # For production with real data, use PostgreSQL (e.g. Vercel Postgres, Supabase).
-if os.environ.get('VERCEL'):
-    _db_path = '/tmp/db.sqlite3'
-else:
-    _db_path = str(BASE_DIR / 'db.sqlite3')
+_db_path = os.environ.get('SQLITE_DB_PATH')
+if not _db_path:
+    if os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'):
+        _db_path = '/tmp/db.sqlite3'
+    else:
+        _db_path = str(BASE_DIR / 'db.sqlite3')
 
 DATABASES = {
     'default': {
