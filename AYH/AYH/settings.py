@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,7 +26,13 @@ SECRET_KEY = 'django-insecure-38eb&2sar0s=x(93uf$yxu7ab4s!*7$ayf0^z^*70y!8g7)h$b
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '10.0.2.2']
+# In development: allow emulator (10.0.2.2), localhost, and any LAN IP (e.g. 192.168.x.x) for physical phone on WiFi
+ALLOWED_HOSTS = [
+    '127.0.0.1',
+    'localhost',
+    '10.0.2.2',        # emulator
+    '192.168.1.25',    # YOUR laptop IP
+]
 
 
 # Application definition
@@ -72,6 +79,8 @@ TEMPLATES = [
                 'django.template.context_processors.csrf',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'careapp.context_processors.admin_notifications',
+                'careapp.context_processors.donor_notification_count',
             ],
         },
     },
@@ -125,7 +134,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = str(BASE_DIR / 'media')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -135,6 +146,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Login URL
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/home/'
+LOGOUT_REDIRECT_URL = '/accounts/login/'
 
 # CSRF Settings
 # Note: Set CSRF_COOKIE_SECURE to True when using HTTPS in production
@@ -158,6 +170,7 @@ SESSION_COOKIE_SECURE = IS_PRODUCTION  # Secure session cookies in production
 SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to session cookies
 SESSION_COOKIE_SAMESITE = 'Lax'  # Protects against CSRF attacks
 SESSION_COOKIE_AGE = 1209600  # 2 weeks
+SESSION_SAVE_EVERY_REQUEST = True  # Save session on every request (ensures login persists after OTP verify)
 
 # Trusted origins for CSRF (update with your production domain)
 CSRF_TRUSTED_ORIGINS = [
@@ -296,3 +309,10 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
 ]
+
+# ==============================================================================
+# BLOOD REQUEST LOCATION (distance-based donor matching)
+# ==============================================================================
+# Default radius in km when admin creates a request with lat/lng but does not specify radius.
+DEFAULT_RADIUS_KM = 10
+

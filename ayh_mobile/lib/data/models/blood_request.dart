@@ -16,6 +16,11 @@ class BloodRequest {
   final User? createdByUser;
   final List<NotifiedDonor>? notifiedDonors;
   final List<AcceptedDonor>? acceptedDonors;
+  /// Request location for distance-based matching
+  final double? reqLat;
+  final double? reqLng;
+  final String? locationName;
+  final double radiusKm;
 
   BloodRequest({
     required this.id,
@@ -33,18 +38,29 @@ class BloodRequest {
     this.createdByUser,
     this.notifiedDonors,
     this.acceptedDonors,
+    this.reqLat,
+    this.reqLng,
+    this.locationName,
+    this.radiusKm = 5.0,
   });
+
+  static int? _parseCreatedBy(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is Map && v['id'] != null) return v['id'] is int ? v['id'] as int : int.tryParse(v['id'].toString());
+    return null;
+  }
 
   factory BloodRequest.fromJson(Map<String, dynamic> json) {
     return BloodRequest(
       id: json['id'] ?? 0,
       bloodGroup: json['blood_group'] ?? '',
-      unitsNeeded: json['units_needed'] ?? 1,
+      unitsNeeded: json['units_needed'] is int ? json['units_needed'] as int : int.tryParse(json['units_needed']?.toString() ?? '1') ?? 1,
       urgency: json['urgency'] ?? '',
       urgencyDisplay: json['urgency_display'] ?? json['urgency'] ?? '',
       note: json['note'] ?? '',
-      createdBy: json['created_by'],
-      createdByUsername: json['created_by_username'],
+      createdBy: _parseCreatedBy(json['created_by']),
+      createdByUsername: json['created_by_username']?.toString() ?? (json['created_by'] is Map ? (json['created_by'] as Map)['username']?.toString() : null),
       isActive: json['is_active'] ?? true,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
@@ -64,11 +80,22 @@ class BloodRequest {
               .map((d) => AcceptedDonor.fromJson(d))
               .toList()
           : null,
+      reqLat: _toDouble(json['req_lat']),
+      reqLng: _toDouble(json['req_lng']),
+      locationName: json['location_name']?.toString(),
+      radiusKm: _toDouble(json['radius_km']) ?? 5.0,
     );
   }
 
+  static double? _toDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
+  }
+
   Map<String, dynamic> toJson() {
-    return {
+    final m = <String, dynamic>{
       'id': id,
       'blood_group': bloodGroup,
       'units_needed': unitsNeeded,
@@ -76,6 +103,11 @@ class BloodRequest {
       'note': note,
       'is_active': isActive,
     };
+    if (reqLat != null) m['req_lat'] = reqLat;
+    if (reqLng != null) m['req_lng'] = reqLng;
+    if (locationName != null && locationName!.isNotEmpty) m['location_name'] = locationName;
+    m['radius_km'] = radiusKm;
+    return m;
   }
 }
 
@@ -84,12 +116,15 @@ class NotifiedDonor {
   final String username;
   final String? bloodGroup;
   final DateTime notifiedAt;
+  /// Distance in km from request location (when request has location)
+  final double? distanceKm;
 
   NotifiedDonor({
     required this.id,
     required this.username,
     this.bloodGroup,
     required this.notifiedAt,
+    this.distanceKm,
   });
 
   factory NotifiedDonor.fromJson(Map<String, dynamic> json) {
@@ -100,6 +135,7 @@ class NotifiedDonor {
       notifiedAt: json['notified_at'] != null
           ? DateTime.parse(json['notified_at'])
           : DateTime.now(),
+      distanceKm: BloodRequest._toDouble(json['distance_km']),
     );
   }
 }
@@ -110,6 +146,7 @@ class AcceptedDonor {
   final String? phone;
   final String? bloodGroup;
   final DateTime respondedAt;
+  final double? distanceKm;
 
   AcceptedDonor({
     required this.id,
@@ -117,6 +154,7 @@ class AcceptedDonor {
     this.phone,
     this.bloodGroup,
     required this.respondedAt,
+    this.distanceKm,
   });
 
   factory AcceptedDonor.fromJson(Map<String, dynamic> json) {
@@ -128,6 +166,31 @@ class AcceptedDonor {
       respondedAt: json['responded_at'] != null
           ? DateTime.parse(json['responded_at'])
           : DateTime.now(),
+      distanceKm: BloodRequest._toDouble(json['distance_km']),
+    );
+  }
+}
+
+/// Matched donor with distance returned when admin creates a request with location
+class MatchedDonor {
+  final int id;
+  final String username;
+  final String? bloodGroup;
+  final double? distanceKm;
+
+  MatchedDonor({
+    required this.id,
+    required this.username,
+    this.bloodGroup,
+    this.distanceKm,
+  });
+
+  factory MatchedDonor.fromJson(Map<String, dynamic> json) {
+    return MatchedDonor(
+      id: json['id'] ?? 0,
+      username: json['username'] ?? '',
+      bloodGroup: json['blood_group'],
+      distanceKm: BloodRequest._toDouble(json['distance_km']),
     );
   }
 }

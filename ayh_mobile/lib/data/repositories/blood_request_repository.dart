@@ -25,12 +25,20 @@ class BloodRequestRepository {
     required int unitsNeeded,
     required String urgency,
     String? note,
+    double? reqLat,
+    double? reqLng,
+    String? locationName,
+    double? radiusKm,
   }) async {
     return await _service.createRequest(
       bloodGroup: bloodGroup,
       unitsNeeded: unitsNeeded,
       urgency: urgency,
       note: note,
+      reqLat: reqLat,
+      reqLng: reqLng,
+      locationName: locationName,
+      radiusKm: radiusKm,
     );
   }
 

@@ -11,6 +11,7 @@ django-cors-headers==4.3.1
 # Additional utilities
 python-decouple==3.8  # For environment variables
 Pillow==10.1.0  # For image handling (if needed later)
+twilio>=8.0.0  # Optional: for sending OTP SMS (set TWILIO_* in settings/env)
 
 # Production server (optional)
 gunicorn==21.2.0

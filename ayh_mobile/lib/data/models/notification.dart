@@ -7,6 +7,9 @@ class NotificationModel {
   final DateTime createdAt;
   final bool hasResponded;
   final String? responseStatus;
+  final DateTime? respondedAt;
+  /// Distance in km from request location to donor's location (when both have location)
+  final double? distanceKm;
 
   NotificationModel({
     required this.id,
@@ -15,6 +18,8 @@ class NotificationModel {
     required this.createdAt,
     required this.hasResponded,
     this.responseStatus,
+    this.respondedAt,
+    this.distanceKm,
   });
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
@@ -27,7 +32,18 @@ class NotificationModel {
           : DateTime.now(),
       hasResponded: json['has_responded'] ?? false,
       responseStatus: json['response_status'],
+      respondedAt: json['responded_at'] != null
+          ? DateTime.tryParse(json['responded_at'])
+          : null,
+      distanceKm: _toDouble(json['distance_km']),
     );
+  }
+
+  static double? _toDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
   }
 
   Map<String, dynamic> toJson() {
@@ -36,6 +52,7 @@ class NotificationModel {
       'is_read': isRead,
       'has_responded': hasResponded,
       'response_status': responseStatus,
+      'responded_at': respondedAt?.toIso8601String(),
     };
   }
 }

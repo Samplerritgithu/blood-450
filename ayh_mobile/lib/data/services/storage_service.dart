@@ -42,10 +42,8 @@ class StorageService {
 
   Future<User?> getUser() async {
     String? userJson = _prefs?.getString('user');
-    if (userJson != null) {
-      return User.fromJson(json.decode(userJson));
-    }
-    return null;
+    if (userJson == null) return null;
+    return User.fromJson(json.decode(userJson));
   }
 
   Future<void> clearUser() async {
@@ -59,10 +57,8 @@ class StorageService {
 
   Future<DonorProfile?> getDonorProfile() async {
     String? profileJson = _prefs?.getString('donor_profile');
-    if (profileJson != null) {
-      return DonorProfile.fromJson(json.decode(profileJson));
-    }
-    return null;
+    if (profileJson == null) return null;
+    return DonorProfile.fromJson(json.decode(profileJson));
   }
 
   Future<void> clearDonorProfile() async {
@@ -74,11 +70,43 @@ class StorageService {
     await clearTokens();
     await clearUser();
     await clearDonorProfile();
+    await clearAcceptanceCount();
   }
 
   // Check if logged in
   Future<bool> isLoggedIn() async {
     String? token = await getAccessToken();
     return token != null;
+  }
+
+  // Intro screen (first launch)
+  static const String _keyIntroSeen = 'intro_seen';
+
+  Future<bool> getIntroSeen() async {
+    return _prefs?.getBool(_keyIntroSeen) ?? false;
+  }
+
+  Future<void> setIntroSeen() async {
+    await _prefs?.setBool(_keyIntroSeen, true);
+  }
+
+  // Acceptance count (bell badge - increases when donor accepts)
+  static const String _keyAcceptanceCount = 'acceptance_count';
+
+  Future<int> getAcceptanceCount() async {
+    return _prefs?.getInt(_keyAcceptanceCount) ?? 0;
+  }
+
+  Future<void> setAcceptanceCount(int count) async {
+    await _prefs?.setInt(_keyAcceptanceCount, count);
+  }
+
+  Future<void> incrementAcceptanceCount() async {
+    final n = await getAcceptanceCount();
+    await setAcceptanceCount(n + 1);
+  }
+
+  Future<void> clearAcceptanceCount() async {
+    await _prefs?.remove(_keyAcceptanceCount);
   }
 }

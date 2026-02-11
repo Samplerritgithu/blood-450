@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../../core/api/api_client.dart';
 import '../../core/constants/api_constants.dart';
 import '../models/user.dart';
@@ -30,8 +31,22 @@ class AuthService {
         };
       }
       return {'success': false, 'error': 'Login failed'};
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        return {'success': false, 'error': 'Invalid username or password'};
+      }
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.message?.contains('took longer') == true) {
+        return {
+          'success': false,
+          'error': 'Cannot reach server. Run backend with: python manage.py runserver 0.0.0.0:8000',
+        };
+      }
+      return {'success': false, 'error': e.response?.data?['detail'] ?? 'Login failed'};
     } catch (e) {
-      return {'success': false, 'error': e.toString()};
+      return {'success': false, 'error': 'Login failed. Please try again.'};
     }
   }
 

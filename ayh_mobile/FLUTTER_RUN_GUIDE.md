@@ -1,5 +1,48 @@
 # Flutter App - Quick Run Guide
 
+## Server connection
+
+### Using a **physical phone** on WiFi (your case)
+
+The app is set up for the **emulator** by default (`10.0.2.2`). On a **real phone** that IP does nothing, so you get timeouts.
+
+**Do this:**
+
+1. **Find your PC’s IP** on the same WiFi as the phone:
+   - **Windows:** Open CMD → `ipconfig` → use **IPv4 Address** (e.g. `192.168.1.5`).
+   - **Mac:** System Preferences → Network, or Terminal: `ifconfig | grep "inet "`.
+
+2. **Point the app at that IP**  
+   In `lib/core/constants/api_constants.dart` set:
+   ```dart
+   static const String? baseUrlOverride = 'http://192.168.1.5:8000/api/';  // use YOUR PC IP
+   ```
+   Replace `192.168.1.5` with the IP from step 1.
+
+3. **Start Django so it accepts connections from the network** (from the AYH project folder):
+   ```bash
+   python manage.py runserver 0.0.0.0:8000
+   ```
+
+4. **Run the app on your phone** (same WiFi). Login/API should work.
+
+### Using the **Android emulator**
+
+- Start server: `python manage.py runserver 0.0.0.0:8000`
+- Keep `baseUrlOverride = null` in `api_constants.dart` (app uses `10.0.2.2` for Android emulator).
+
+---
+
+## App icon (Blood450 logo)
+
+To replace the default Flutter "f" icon with the Blood450 logo on the home screen, run:
+```bash
+dart run flutter_launcher_icons
+```
+Then rebuild and reinstall the app. The logo at `assets/images/blood450_logo.png` will be used for Android and iOS launcher icons.
+
+---
+
 ## ✅ Complete! All Files Created
 
 ### 📁 Project Structure Created:

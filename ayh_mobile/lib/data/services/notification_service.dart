@@ -9,8 +9,18 @@ class NotificationService {
     try {
       final response = await _apiClient.get(ApiConstants.notifications);
       if (response.statusCode == 200) {
-        return (response.data as List)
-            .map((json) => NotificationModel.fromJson(json))
+        // API may return paginated { "results": [...] } or direct list
+        final data = response.data;
+        List<dynamic> list;
+        if (data is List) {
+          list = data;
+        } else if (data is Map && data['results'] != null) {
+          list = data['results'] as List;
+        } else {
+          return [];
+        }
+        return list
+            .map((json) => NotificationModel.fromJson(json as Map<String, dynamic>))
             .toList();
       }
       return [];

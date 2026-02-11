@@ -14,15 +14,19 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 from django.views.generic import RedirectView
+from careapp.views import DonorLoginView
 
 urlpatterns = [
     # Django Admin
     path('admin/', admin.site.urls),
     
-    # Web Authentication (Django Templates)
+    # Web Authentication (Django Templates) – custom login so email/username is case-insensitive
+    path('accounts/login/', DonorLoginView.as_view(), name='login'),
     path('accounts/', include('django.contrib.auth.urls')),
     
     # REST API Endpoints (for Flutter)
@@ -32,3 +36,5 @@ urlpatterns = [
     path('', RedirectView.as_view(url='/accounts/login/', permanent=False), name='home'),
     path('', include('careapp.urls')),
 ]
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

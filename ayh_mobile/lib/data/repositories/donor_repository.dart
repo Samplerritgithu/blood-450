@@ -18,17 +18,21 @@ class DonorRepository {
     required String phone,
     required String bloodGroup,
     required bool isAvailable,
+    double? lastLat,
+    double? lastLng,
   }) async {
     final profile = await _donorService.createProfile(
       phone: phone,
       bloodGroup: bloodGroup,
       isAvailable: isAvailable,
+      lastLat: lastLat,
+      lastLng: lastLng,
     );
-    
+
     if (profile != null) {
       await _storageService.saveDonorProfile(profile);
     }
-    
+
     return profile;
   }
 
@@ -36,18 +40,27 @@ class DonorRepository {
     String? phone,
     String? bloodGroup,
     bool? isAvailable,
+    double? lastLat,
+    double? lastLng,
   }) async {
     final profile = await _donorService.updateMyProfile(
       phone: phone,
       bloodGroup: bloodGroup,
       isAvailable: isAvailable,
+      lastLat: lastLat,
+      lastLng: lastLng,
     );
-    
+
     if (profile != null) {
       await _storageService.saveDonorProfile(profile);
     }
-    
+
     return profile;
+  }
+
+  /// Update donor's last-known location (for distance-based matching).
+  Future<DonorProfile?> updateMyLocation(double lat, double lng) async {
+    return updateMyProfile(lastLat: lat, lastLng: lng);
   }
 
   Future<List<DonorProfile>> getAllDonors() async {

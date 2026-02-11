@@ -1,14 +1,25 @@
 import 'dart:io';
 
 class ApiConstants {
-  // Base URL - Auto-detect platform
+  /// When using a **physical phone** on WiFi (not emulator), set this to your PC's IP.
+  /// Example: 'http://192.168.1.5:8000/api/'
+  /// Find your IP: Windows: ipconfig → IPv4 | Mac/Linux: ifconfig or ip addr
+  /// Leave null for emulator (Android uses 10.0.2.2, iOS uses localhost).
+  static const String? baseUrlOverride = null;
+
+  // Base URL - use override when set (for physical device on WiFi), else platform default
   static String get baseUrl {
+    if (baseUrlOverride != null && baseUrlOverride!.isNotEmpty) {
+      return baseUrlOverride!.endsWith('/')
+          ? baseUrlOverride!
+          : '${baseUrlOverride!}/';
+    }
     if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000/api/';
+      return 'http://10.0.2.2:8000/api/'; // Android emulator
     } else if (Platform.isIOS) {
       return 'http://localhost:8000/api/';
     } else {
-      return 'http://192.168.1.100:8000/api/';
+      return 'http://localhost:8000/api/';
     }
   }
 
@@ -38,4 +49,7 @@ class ApiConstants {
 
   // Dashboard endpoint
   static const String dashboard = 'dashboard/';
+
+  /// Default radius in km for location-based blood request matching (must match backend DEFAULT_RADIUS_KM).
+  static const double defaultRadiusKm = 10.0;
 }

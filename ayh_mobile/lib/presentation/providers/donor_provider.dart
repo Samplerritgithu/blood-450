@@ -34,6 +34,8 @@ class DonorProvider with ChangeNotifier {
     required String phone,
     required String bloodGroup,
     bool isAvailable = true,
+    double? lastLat,
+    double? lastLng,
   }) async {
     _isLoading = true;
     _error = null;
@@ -44,8 +46,10 @@ class DonorProvider with ChangeNotifier {
         phone: phone,
         bloodGroup: bloodGroup,
         isAvailable: isAvailable,
+        lastLat: lastLat,
+        lastLng: lastLng,
       );
-      
+
       _isLoading = false;
       notifyListeners();
       return _profile != null;
@@ -61,6 +65,8 @@ class DonorProvider with ChangeNotifier {
     String? phone,
     String? bloodGroup,
     bool? isAvailable,
+    double? lastLat,
+    double? lastLng,
   }) async {
     _isLoading = true;
     _error = null;
@@ -71,8 +77,10 @@ class DonorProvider with ChangeNotifier {
         phone: phone,
         bloodGroup: bloodGroup,
         isAvailable: isAvailable,
+        lastLat: lastLat,
+        lastLng: lastLng,
       );
-      
+
       _isLoading = false;
       notifyListeners();
       return _profile != null;
@@ -81,6 +89,25 @@ class DonorProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Update donor's last-known location (for distance-based matching).
+  Future<DonorProfile?> updateMyLocation(double lat, double lng) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      _profile = await _repository.updateMyLocation(lat, lng);
+      _isLoading = false;
+      notifyListeners();
+      return _profile;
+    } catch (e) {
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return null;
     }
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../../data/repositories/notification_repository.dart';
 import '../../data/models/notification.dart';
+import '../../data/services/storage_service.dart';
 
 class NotificationProvider with ChangeNotifier {
   final NotificationRepository _repository = NotificationRepository();
@@ -8,12 +9,16 @@ class NotificationProvider with ChangeNotifier {
   List<NotificationModel> _notifications = [];
   bool _isLoading = false;
   String? _error;
+  int _acceptanceCount = 0;
 
   List<NotificationModel> get notifications => _notifications;
   bool get isLoading => _isLoading;
   String? get error => _error;
   
   int get unreadCount => _notifications.where((n) => !n.isRead).length;
+  int get acceptanceCount => _acceptanceCount;
+  /// Bell badge: unread notifications + acceptance count (increases when donor accepts)
+  int get badgeCount => unreadCount + _acceptanceCount;
   List<NotificationModel> get unreadNotifications => 
       _notifications.where((n) => !n.isRead).toList();
 
@@ -24,11 +29,18 @@ class NotificationProvider with ChangeNotifier {
     try {
       _notifications = await _repository.getMyNotifications();
       _error = null;
+      _acceptanceCount = await StorageService().getAcceptanceCount();
     } catch (e) {
       _error = e.toString();
     }
 
     _isLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> clearAcceptanceCount() async {
+    await StorageService().clearAcceptanceCount();
+    _acceptanceCount = 0;
     notifyListeners();
   }
 
@@ -44,6 +56,7 @@ class NotificationProvider with ChangeNotifier {
           createdAt: _notifications[index].createdAt,
           hasResponded: _notifications[index].hasResponded,
           responseStatus: _notifications[index].responseStatus,
+          respondedAt: _notifications[index].respondedAt,
         );
         notifyListeners();
       }
@@ -74,7 +87,10 @@ class NotificationProvider with ChangeNotifier {
       );
       
       if (result['success']) {
-        // Reload notifications to update status
+        if (response == 'accepted') {
+          await StorageService().incrementAcceptanceCount();
+          _acceptanceCount = await StorageService().getAcceptanceCount();
+        }
         await loadNotifications();
       } else {
         _error = result['error'];

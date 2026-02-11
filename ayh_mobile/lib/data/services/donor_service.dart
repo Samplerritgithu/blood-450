@@ -22,16 +22,19 @@ class DonorService {
     required String phone,
     required String bloodGroup,
     required bool isAvailable,
+    double? lastLat,
+    double? lastLng,
   }) async {
     try {
-      final response = await _apiClient.post(
-        ApiConstants.donors,
-        data: {
-          'phone': phone,
-          'blood_group': bloodGroup,
-          'is_available': isAvailable,
-        },
-      );
+      final data = <String, dynamic>{
+        'phone': phone,
+        'blood_group': bloodGroup,
+        'is_available': isAvailable,
+      };
+      if (lastLat != null) data['last_lat'] = lastLat;
+      if (lastLng != null) data['last_lng'] = lastLng;
+
+      final response = await _apiClient.post(ApiConstants.donors, data: data);
 
       if (response.statusCode == 201) {
         return DonorProfile.fromJson(response.data);
@@ -47,14 +50,18 @@ class DonorService {
     String? phone,
     String? bloodGroup,
     bool? isAvailable,
+    double? lastLat,
+    double? lastLng,
   }) async {
     try {
       final data = <String, dynamic>{};
       if (phone != null) data['phone'] = phone;
       if (bloodGroup != null) data['blood_group'] = bloodGroup;
       if (isAvailable != null) data['is_available'] = isAvailable;
+      if (lastLat != null) data['last_lat'] = lastLat;
+      if (lastLng != null) data['last_lng'] = lastLng;
 
-      final response = await _apiClient.put(
+      final response = await _apiClient.patch(
         ApiConstants.donorUpdateMe,
         data: data,
       );

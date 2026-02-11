@@ -13,7 +13,14 @@ from django.contrib.auth import authenticate
 from django.db import transaction, IntegrityError
 from django.shortcuts import get_object_or_404
 
-from .models import DonorProfile, BloodRequest, Notification, DonorResponse
+from django.conf import settings as django_settings
+
+from .models import DonorProfile, BloodRequest, Notification, DonorResponse, AdminNotification
+from .utils import haversine_km, donor_has_location
+import logging
+
+logger = logging.getLogger(__name__)
+DEFAULT_RADIUS_KM = getattr(django_settings, 'DEFAULT_RADIUS_KM', 10)
 from .serializers import (
     UserSerializer,
     UserRegistrationSerializer,
@@ -271,21 +278,84 @@ class BloodRequestViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         """
-        Create blood request and notify compatible donors
-        Uses the same blood compatibility logic as web version
+        Create blood request and notify compatible donors.
+        If req_lat/req_lng are set: only notify donors within radius_km (distance-based matching).
+        Donors without lat/lng are excluded when using location. Otherwise: notify all compatible donors.
         """
         blood_request = serializer.save(created_by=self.request.user)
         
-        # Get compatible blood groups
         compatible_blood_groups = get_compatible_blood_groups(blood_request.blood_group)
-        
-        # Find matching donors
-        matching_donors = DonorProfile.objects.filter(
+        base_queryset = DonorProfile.objects.filter(
             blood_group__in=compatible_blood_groups,
             is_available=True
         ).select_related('user')
         
-        # Create notifications
+        req_lat = blood_request.req_lat
+        req_lng = blood_request.req_lng
+        radius_km = blood_request.radius_km
+        if radius_km is None or radius_km <= 0:
+            radius_km = DEFAULT_RADIUS_KM
+        
+        # Debug logging (temporary – disable in production or set LOG_LEVEL)
+        logger.debug(
+            "BloodRequest create: req_lat=%s req_lng=%s radius_km=%s base_queryset_count=%s",
+            req_lat, req_lng, radius_km, base_queryset.count()
+        )
+        
+        # Use distance-based matching whenever BOTH request coordinates are present
+        if req_lat is not None and req_lng is not None:
+            try:
+                req_lat_f = float(req_lat)
+                req_lng_f = float(req_lng)
+                radius_km_f = max(0.1, float(radius_km))
+            except (TypeError, ValueError):
+                req_lat_f = req_lng_f = None
+            if req_lat_f is not None and req_lng_f is not None:
+                donors_with_location = [dp for dp in base_queryset if donor_has_location(dp)]
+                logger.debug(
+                    "Distance matching: request (%.6f, %.6f) radius_km=%.2f, donors_with_location=%s",
+                    req_lat_f, req_lng_f, radius_km_f, len(donors_with_location)
+                )
+                # Log up to 5 sample donors and their distances
+                for i, donor_profile in enumerate(donors_with_location[:5]):
+                    try:
+                        dlat = float(donor_profile.last_lat)
+                        dlng = float(donor_profile.last_lng)
+                        dist = haversine_km(req_lat_f, req_lng_f, dlat, dlng)
+                        logger.debug(
+                            "  donor id=%s (%.6f, %.6f) distance_km=%s",
+                            donor_profile.user_id, dlat, dlng, dist
+                        )
+                    except (TypeError, ValueError):
+                        pass
+                matched_with_distance = []
+                for donor_profile in base_queryset:
+                    if not donor_has_location(donor_profile):
+                        continue
+                    try:
+                        donor_lat = float(donor_profile.last_lat)
+                        donor_lng = float(donor_profile.last_lng)
+                    except (TypeError, ValueError):
+                        continue
+                    dist = haversine_km(req_lat_f, req_lng_f, donor_lat, donor_lng)
+                    if dist is not None and dist <= radius_km_f:
+                        matched_with_distance.append((donor_profile, round(dist, 2)))
+                matching_donors = [dp for dp, _ in matched_with_distance]
+                blood_request.matched_donors_with_distance = matched_with_distance
+                logger.debug(
+                    "Matched donor IDs: %s",
+                    [dp.user_id for dp in matching_donors]
+                )
+            else:
+                matching_donors = list(base_queryset)
+                blood_request.matched_donors_with_distance = [(dp, None) for dp in matching_donors]
+        else:
+            # Backward compatible: all compatible donors (no location filter)
+            matching_donors = list(base_queryset)
+            blood_request.matched_donors_with_distance = [
+                (dp, None) for dp in matching_donors
+            ]
+        
         notifications_created = 0
         for donor_profile in matching_donors:
             try:
@@ -297,21 +367,36 @@ class BloodRequestViewSet(viewsets.ModelViewSet):
             except IntegrityError:
                 pass
         
-        # Add notification count to response
         blood_request.notifications_count = notifications_created
     
     def create(self, request, *args, **kwargs):
-        """Override create to return custom response"""
+        """Override create to return custom response with matched_donors (with distance when location set)."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         
         blood_request = serializer.instance
         response_serializer = BloodRequestDetailSerializer(blood_request)
+        payload = response_serializer.data
         
+        matched = getattr(blood_request, 'matched_donors_with_distance', None)
+        if matched is not None:
+            matched_donors = [
+                {
+                    'id': dp.user.id,
+                    'username': dp.user.username,
+                    'blood_group': dp.blood_group,
+                    'distance_km': dist,
+                }
+                for dp, dist in matched
+            ]
+            payload['matched_donors'] = matched_donors
+        
+        count = getattr(blood_request, 'notifications_count', 0)
         return Response({
-            'message': f'Blood request created successfully! {getattr(blood_request, "notifications_count", 0)} compatible donor(s) notified.',
-            'blood_request': response_serializer.data
+            'message': f'Blood request created successfully! {count} donor(s) notified.',
+            'blood_request': payload,
+            'matched_donors': payload.get('matched_donors', []),
         }, status=status.HTTP_201_CREATED)
     
     @action(detail=False, methods=['get'])
@@ -414,6 +499,12 @@ def respond_to_request(request):
         donor=request.user,
         defaults={'response': response_value}
     )
+    if response_value == 'accepted':
+        AdminNotification.objects.create(
+            notification_type=AdminNotification.TYPE_DONOR_ACCEPTED,
+            blood_request=blood_request,
+            donor=request.user,
+        )
     
     # Mark notification as read
     Notification.objects.filter(

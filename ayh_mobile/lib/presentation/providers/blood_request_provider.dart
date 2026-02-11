@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../data/repositories/blood_request_repository.dart';
-import '../../data/models/blood_request.dart';
+import '../../data/models/blood_request.dart' show BloodRequest, MatchedDonor;
 
 class BloodRequestProvider with ChangeNotifier {
   final BloodRequestRepository _repository = BloodRequestRepository();
@@ -84,6 +84,10 @@ class BloodRequestProvider with ChangeNotifier {
     required int unitsNeeded,
     required String urgency,
     String? note,
+    double? reqLat,
+    double? reqLng,
+    String? locationName,
+    double? radiusKm,
   }) async {
     _isLoading = true;
     _error = null;
@@ -95,10 +99,13 @@ class BloodRequestProvider with ChangeNotifier {
         unitsNeeded: unitsNeeded,
         urgency: urgency,
         note: note,
+        reqLat: reqLat,
+        reqLng: reqLng,
+        locationName: locationName,
+        radiusKm: radiusKm,
       );
       
       if (result['success']) {
-        // Reload requests
         await loadMyRequests();
       } else {
         _error = result['error'];
