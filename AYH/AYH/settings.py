@@ -12,7 +12,18 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
-from decouple import config
+
+try:
+    from decouple import config
+except ImportError:
+    # Wrong 'decouple' package installed; use os.environ (install python-decouple for .env support)
+    def config(key, default=None, cast=None):
+        val = os.environ.get(key, default)
+        if val is None:
+            return None
+        if cast is bool:
+            return str(val).lower() in ('1', 'true', 'yes', 'on')
+        return val
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -97,21 +108,50 @@ WSGI_APPLICATION = 'AYH.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-# On Vercel the filesystem is read-only; use /tmp (set in vercel.json or by VERCEL=1).
-# For production with real data, use PostgreSQL (e.g. Vercel Postgres, Supabase).
-_db_path = os.environ.get('SQLITE_DB_PATH')
-if not _db_path:
-    if os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'):
-        _db_path = '/tmp/db.sqlite3'
-    else:
-        _db_path = str(BASE_DIR / 'db.sqlite3')
+# Prefer PostgreSQL via DATABASE_URL (Vercel Postgres, Supabase, etc.) or POSTGRES_* env vars.
+# Fallback: SQLite (local or /tmp on Vercel if no Postgres).
+import dj_database_url
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': _db_path,
+if os.environ.get('DATABASE_URL'):
+    _db = dj_database_url.config(
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+    # Supabase and most cloud Postgres require SSL
+    if _db and _db.get('ENGINE', '').endswith('postgresql'):
+        _db.setdefault('OPTIONS', {})['sslmode'] = 'require'
+    DATABASES = {'default': _db}
+elif all([
+    os.environ.get('POSTGRES_HOST'),
+    os.environ.get('POSTGRES_NAME'),
+    os.environ.get('POSTGRES_USER'),
+    os.environ.get('POSTGRES_PASSWORD'),
+]):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': config('POSTGRES_NAME'),
+            'USER': config('POSTGRES_USER'),
+            'PASSWORD': config('POSTGRES_PASSWORD'),
+            'HOST': config('POSTGRES_HOST'),
+            'PORT': config('POSTGRES_PORT', default='5432'),
+            'CONN_MAX_AGE': 600,
+            'OPTIONS': {'sslmode': config('POSTGRES_SSLMODE', default='prefer')},
+        }
     }
-}
+else:
+    _db_path = os.environ.get('SQLITE_DB_PATH')
+    if not _db_path:
+        if os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'):
+            _db_path = '/tmp/db.sqlite3'
+        else:
+            _db_path = str(BASE_DIR / 'db.sqlite3')
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': _db_path,
+        }
+    }
 
 
 # Password validation

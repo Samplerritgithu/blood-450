@@ -22,8 +22,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'AYH.settings')
 
 application = get_wsgi_application()
 
-# On Vercel, DB lives in /tmp; ensure migrations are run on cold start (idempotent).
-if os.environ.get('SQLITE_DB_PATH') == '/tmp/db.sqlite3' or os.environ.get('VERCEL'):
+# On Vercel (Postgres or SQLite /tmp), run migrations on cold start (idempotent).
+if os.environ.get('DATABASE_URL') or os.environ.get('SQLITE_DB_PATH') == '/tmp/db.sqlite3' or os.environ.get('VERCEL'):
     from django.core.management import call_command
     call_command('migrate', '--noinput')
 
