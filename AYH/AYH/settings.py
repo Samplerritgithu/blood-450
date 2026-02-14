@@ -154,16 +154,12 @@ USE_TZ = True
 # ==============================================================================
 
 STATIC_URL = "/static/"
+
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# STATICFILES_DIRS = [
-#     BASE_DIR / "careapp" / "static",
-# ]
-
-STATICFILES_DIRS = []
-_local_static_dir = BASE_DIR / "careapp" / "static"
-if _local_static_dir.exists():
-    STATICFILES_DIRS.append(_local_static_dir)
+STATICFILES_DIRS = [
+    BASE_DIR / "careapp" / "static",
+]
 
 
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
@@ -209,6 +205,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:8000",
     "https://*.vercel.app",
     "https://blood-450-capf.vercel.app",
+    "https://*.vercel.app",
 ]
 
 
