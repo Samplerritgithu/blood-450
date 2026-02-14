@@ -250,10 +250,24 @@ def admin_create_request(request):
     Donors receive a notification and can Accept or Decline (e.g. in the mobile app or donor notifications page).
     """
     if request.method == 'POST':
-        blood_group = request.POST.get('blood_group')
-        units_needed = request.POST.get('units_needed', 1)
-        urgency = request.POST.get('urgency')
+        blood_group = (request.POST.get('blood_group') or '').strip()
+        urgency = (request.POST.get('urgency') or '').strip()
+        units_needed_raw = request.POST.get('units_needed', 1)
         note = request.POST.get('note', '')
+        if blood_group not in dict(DonorProfile.BLOOD_GROUP_CHOICES):
+            messages.error(request, 'Please select a valid blood group.')
+            return redirect('admin_dashboard')
+        if urgency not in dict(BloodRequest.URGENCY_CHOICES):
+            messages.error(request, 'Please select a valid urgency level.')
+            return redirect('admin_dashboard')
+        try:
+            units_needed = int(units_needed_raw) if units_needed_raw else 1
+        except (TypeError, ValueError):
+            messages.error(request, 'Units needed must be a whole number.')
+            return redirect('admin_dashboard')
+        if units_needed < 1:
+            messages.error(request, 'Units needed must be at least 1.')
+            return redirect('admin_dashboard')
         use_location = request.POST.get('use_location') == 'on'
         location_name = (request.POST.get('location_name') or '').strip() or None
         req_lat = _parse_float(request.POST.get('req_lat'))
@@ -274,37 +288,51 @@ def admin_create_request(request):
         state = (request.POST.get('state') or '').strip() or ''
         source = (request.POST.get('source') or 'app').strip() or 'app'
         sla_minutes = request.POST.get('sla_minutes')
-        sla_minutes = int(sla_minutes) if sla_minutes and str(sla_minutes).strip() else None
+        if sla_minutes and str(sla_minutes).strip():
+            try:
+                sla_minutes = int(sla_minutes)
+                if sla_minutes < 0:
+                    raise ValueError('SLA must be >= 0')
+            except (TypeError, ValueError):
+                messages.error(request, 'SLA minutes must be a non-negative whole number.')
+                return redirect('admin_dashboard')
+        else:
+            sla_minutes = None
 
-        blood_request = BloodRequest.objects.create(
-            blood_group=blood_group,
-            units_needed=int(units_needed) if units_needed else 1,
-            units_required=int(units_needed) if units_needed else 1,
-            urgency=urgency,
-            urgency_level=urgency and urgency.capitalize() or '',
-            status='open',
-            source=source,
-            hospital_id=hospital_id,
-            city=city,
-            state=state,
-            sla_minutes=sla_minutes,
-            note=note or '',
-            created_by=request.user,
-            location_name=location_name or '',
-            req_lat=req_lat,
-            req_lng=req_lng,
-            radius_km=radius_km,
-        )
-        RequestTimeline.objects.create(
-            request=blood_request,
-            event_type='CREATED',
-            actor='ADMIN',
-            metadata={'created_by': request.user.username},
-        )
-        AdminNotification.objects.create(
-            notification_type=AdminNotification.TYPE_REQUEST_CREATED,
-            blood_request=blood_request,
-        )
+        try:
+            blood_request = BloodRequest.objects.create(
+                blood_group=blood_group,
+                units_needed=units_needed,
+                units_required=units_needed,
+                urgency=urgency,
+                urgency_level=urgency and urgency.capitalize() or '',
+                status='open',
+                source=source,
+                hospital_id=hospital_id,
+                city=city,
+                state=state,
+                sla_minutes=sla_minutes,
+                note=note or '',
+                created_by=request.user,
+                location_name=location_name or '',
+                req_lat=req_lat,
+                req_lng=req_lng,
+                radius_km=radius_km,
+            )
+            RequestTimeline.objects.create(
+                request=blood_request,
+                event_type='CREATED',
+                actor='ADMIN',
+                metadata={'created_by': request.user.username},
+            )
+            AdminNotification.objects.create(
+                notification_type=AdminNotification.TYPE_REQUEST_CREATED,
+                blood_request=blood_request,
+            )
+        except Exception:
+            logger.exception("admin_create_request: failed to create request")
+            messages.error(request, 'Could not create the request. Please try again.')
+            return redirect('admin_dashboard')
 
         compatible_blood_groups = get_compatible_blood_groups(blood_group)
         base_queryset = DonorProfile.objects.filter(
@@ -355,6 +383,9 @@ def admin_create_request(request):
                 notifications_created += 1
             except IntegrityError:
                 pass
+            except Exception:
+                logger.exception("admin_create_request: notify failed for donor_id=%s", donor_profile.user_id)
+                continue
 
         # Stay on dashboard: redirect with created_request_id so dashboard shows summary modal (no message – modal shows notified/accepted counts)
         url = reverse('admin_dashboard') + '?created_request_id=' + str(blood_request.id)
