@@ -82,13 +82,15 @@ def home_redirect(request):
 @ensure_csrf_cookie
 def admin_dashboard(request):
     """Admin dashboard with statistics, all requests, and master data (hospitals, blood banks, cities)."""
-    # Get all blood requests
-    blood_requests = BloodRequest.objects.all().prefetch_related(
+    # Get recent blood requests for dashboard display
+    blood_requests_qs = BloodRequest.objects.all()
+    blood_requests = blood_requests_qs.prefetch_related(
         'responses', 'notifications', 'delay_reasons', 'delay_reasons__reported_by', 'delay_reasons__reported_by__donor_profile'
-    ).order_by('-created_at')
+    ).order_by('-created_at')[:50]
     
-    # Get all donors
-    donors = DonorProfile.objects.all().select_related('user')
+    # Get recent donors for dashboard display
+    donors_qs = DonorProfile.objects.select_related('user')
+    donors = donors_qs.order_by('-created_at')[:200]
     
     # Master data counts and recent lists (saved backend data)
     total_hospitals = HospitalMaster.objects.count()
@@ -99,10 +101,10 @@ def admin_dashboard(request):
     recent_cities = DimCity.objects.all().order_by('state', 'city')
     
     # Calculate statistics
-    total_requests = blood_requests.count()
-    total_donors = donors.count()
+    total_requests = blood_requests_qs.count()
+    total_donors = donors_qs.count()
     total_accepted = DonorResponse.objects.filter(response='accepted').count()
-    active_requests = blood_requests.filter(is_active=True).count()
+    active_requests = blood_requests_qs.filter(is_active=True).count()
     
     # Chart data: requests by urgency (for pie chart)
     urgency_counts = dict(
@@ -151,7 +153,7 @@ def admin_dashboard(request):
         .annotate(count=Count('id'))
         .values_list('blood_request_id', 'count')
     )
-    requests_list = list(blood_requests.values('id', 'units_needed')[:50])
+    requests_list = list(blood_requests_qs.order_by('-created_at').values('id', 'units_needed')[:50])
     chart_scatter = {
         'x': list(range(1, len(requests_list) + 1)),
         'y_responses': [response_counts.get(r['id'], 0) for r in requests_list],
@@ -834,24 +836,21 @@ def donor_notifications(request):
     
     notifications = Notification.objects.filter(
         user=request.user
-    ).select_related('blood_request').order_by('-created_at')
+    ).select_related('blood_request').order_by('-created_at')[:100]
     
-    responded_request_ids = set(
-        DonorResponse.objects.filter(donor=request.user).values_list('blood_request_id', flat=True)
+    responses_map = dict(
+        DonorResponse.objects.filter(donor=request.user).values_list('blood_request_id', 'response')
     )
     
     notifications_with_status = []
     accepted_count = 0
     rejected_count = 0
     for notification in notifications:
-        notification.has_responded = notification.blood_request_id in responded_request_ids
+        status = responses_map.get(notification.blood_request_id)
+        notification.has_responded = status is not None
         if notification.has_responded:
-            response = DonorResponse.objects.get(
-                donor=request.user,
-                blood_request_id=notification.blood_request_id
-            )
-            notification.response_status = response.response
-            if response.response == 'accepted':
+            notification.response_status = status
+            if status == 'accepted':
                 accepted_count += 1
             else:
                 rejected_count += 1
@@ -1177,7 +1176,7 @@ def _bool_choice(val):
 
 @require_http_methods(["GET", "POST"])
 def donor_register(request):
-    """Step 1: Show registration form. POST creates User by role: Superuser (is_staff+is_superuser) or Donor (UserProfile+DonorProfile, then blood group)."""
+    """Step 1: Show registration form. POST creates donor User + profiles, then blood group."""
     if request.method == 'GET':
         form = DonorRegistrationForm()
         err = request.GET.get('err')
@@ -1189,26 +1188,6 @@ def donor_register(request):
         return JsonResponse({'success': False, 'errors': form.errors}, status=400)
     data = form.cleaned_data
     username = data['username'].strip().lower()
-    user_role = (data.get('user_role') or 'donor').strip().lower()
-
-    if user_role == 'superuser':
-        with transaction.atomic():
-            user = User.objects.create_user(
-                username=username,
-                email=data.get('email') or '',
-                password=data['password'],
-                first_name=username,
-                is_active=True,
-                is_staff=True,
-                is_superuser=True,
-            )
-        return JsonResponse({
-            'success': True,
-            'role': 'superuser',
-            'redirect_url': '/accounts/login/?next=/home/',
-            'message': 'Superuser created. Please log in to access the admin dashboard.',
-        })
-
     # Donor: create User, UserProfile, DonorProfile; frontend shows Blood Donation popup -> Thank You popup -> blood group
     mobile = (data.get('mobile') or '').strip()
     with transaction.atomic():
