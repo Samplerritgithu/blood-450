@@ -35,6 +35,8 @@ urlpatterns = [
     path('delay/<uuid:delay_uuid>/resolve/', views.admin_resolve_delay, name='admin_resolve_delay'),
     # Real-time poll APIs
     path('api/donor/poll/', views.api_donor_poll, name='api_donor_poll'),
+    path('api/donor/notification-count/', views.api_donor_notification_count, name='api_donor_notification_count'),
+    path('api/admin/notifications/', views.api_admin_notifications, name='api_admin_notifications'),
     path('api/admin/delays-unresolved-count/', views.api_admin_unresolved_delay_count, name='api_admin_unresolved_delay_count'),
     path('api/admin/request/<int:request_id>/delays/', views.api_admin_request_delays, name='api_admin_request_delays'),
 ]

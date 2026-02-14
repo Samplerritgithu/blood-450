@@ -1070,6 +1070,48 @@ def api_donor_poll(request):
 @login_required
 @user_passes_test(is_staff_user)
 @require_http_methods(["GET"])
+def api_admin_notifications(request):
+    """JSON: admin notifications list + counts for navbar modal."""
+    include_list = request.GET.get('list', '1') != '0'
+    total_count = AdminNotification.objects.count()
+    delay_count = DelayReason.objects.filter(resolved=False).count()
+    notifications_data = []
+    if include_list:
+        qs = AdminNotification.objects.select_related('blood_request', 'donor').order_by('-created_at')[:50]
+        for n in qs:
+            blood_request = n.blood_request
+            notifications_data.append({
+                'id': n.id,
+                'notification_type': n.notification_type,
+                'blood_request_id': blood_request.id if blood_request else None,
+                'blood_group': getattr(blood_request, 'blood_group', ''),
+                'urgency': getattr(blood_request, 'urgency', ''),
+                'donor_username': n.donor.username if n.donor else '',
+                'created_at': n.created_at.strftime('%b %d, %Y %H:%M') if n.created_at else '',
+            })
+    return JsonResponse({
+        'count': total_count,
+        'delay_count': delay_count,
+        'notifications': notifications_data,
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_donor_notification_count(request):
+    """JSON: pending donor notification count for navbar badge."""
+    if request.user.is_staff:
+        return JsonResponse({'error': 'For donors only'}, status=403)
+    responded_ids = DonorResponse.objects.filter(donor=request.user).values_list('blood_request_id', flat=True)
+    pending_count = Notification.objects.filter(user=request.user).exclude(
+        blood_request_id__in=responded_ids
+    ).count()
+    return JsonResponse({'count': pending_count})
+
+
+@login_required
+@user_passes_test(is_staff_user)
+@require_http_methods(["GET"])
 def api_admin_unresolved_delay_count(request):
     """JSON: count of unresolved delay reasons (for admin navbar badge)."""
     count = DelayReason.objects.filter(resolved=False).count()
