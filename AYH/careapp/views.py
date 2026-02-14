@@ -1135,7 +1135,7 @@ def _bool_choice(val):
 
 @require_http_methods(["GET", "POST"])
 def donor_register(request):
-    """Step 1: Show registration form. POST creates User (inactive) + DonorProfile, returns JSON to show blood group modal."""
+    """Step 1: Show registration form. POST creates User by role: Superuser (is_staff+is_superuser) or Donor (UserProfile+DonorProfile, then blood group)."""
     if request.method == 'GET':
         form = DonorRegistrationForm()
         err = request.GET.get('err')
@@ -1147,8 +1147,28 @@ def donor_register(request):
         return JsonResponse({'success': False, 'errors': form.errors}, status=400)
     data = form.cleaned_data
     username = data['username'].strip().lower()
-    mobile = data['mobile'].strip()
-    # Create User, UserProfile (personal/location/health data), DonorProfile (phone only; blood_group set after selection)
+    user_role = (data.get('user_role') or 'donor').strip().lower()
+
+    if user_role == 'superuser':
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=username,
+                email=data.get('email') or '',
+                password=data['password'],
+                first_name=username,
+                is_active=True,
+                is_staff=True,
+                is_superuser=True,
+            )
+        return JsonResponse({
+            'success': True,
+            'role': 'superuser',
+            'redirect_url': '/accounts/login/?next=/home/',
+            'message': 'Superuser created. Please log in to access the admin dashboard.',
+        })
+
+    # Donor: create User, UserProfile, DonorProfile; frontend shows Blood Donation popup -> Thank You popup -> blood group
+    mobile = (data.get('mobile') or '').strip()
     with transaction.atomic():
         user = User.objects.create_user(
             username=username,
@@ -1190,7 +1210,11 @@ def donor_register(request):
         )
     request.session['pending_verification_user_id'] = user.pk
     request.session['pending_verification_phone'] = mobile
-    return JsonResponse({'success': True, 'message': 'Please select your blood group.'})
+    return JsonResponse({
+        'success': True,
+        'role': 'donor',
+        'message': 'Please complete the steps: Blood Donation info → Thank you → Choose blood group.',
+    })
 
 
 @require_http_methods(["POST"])

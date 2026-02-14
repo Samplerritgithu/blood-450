@@ -87,16 +87,26 @@
             {% csrf_token %}
             <div id="wizardStep1" class="wizard-step active">
             <div class="reg-card">
-                <h2>Personal details</h2>
+                <h2>User Role &amp; Personal details</h2>
                 <div class="form-grid-4">
+                    <div class="form-group span-2">
+                        <label for="id_user_role">User Role *</label>
+                        <select id="id_user_role" name="user_role" required>
+                            <option value="">-- Select role --</option>
+                            <option value="donor" {% if form.user_role.value == 'donor' %}selected{% endif %}>Donor</option>
+                            <option value="superuser" {% if form.user_role.value == 'superuser' %}selected{% endif %}>Superuser</option>
+                        </select>
+                        <span class="help">Superuser: full admin access. Donor: blood donor (no admin).</span>
+                        <span class="field-error" data-field="user_role"></span>
+                    </div>
                     <div class="form-group">
                         <label for="id_username">Username *</label>
                         <input type="text" id="id_username" name="username" value="{{ form.username.value|default:'' }}" placeholder="Enter Username" required maxlength="50" autocomplete="username">
                         <span class="field-error" data-field="username"></span>
                     </div>
                     <div class="form-group">
-                        <label for="id_mobile">Mobile *</label>
-                        <input type="text" id="id_mobile" name="mobile" value="{{ form.mobile.value|default:'' }}" placeholder="Enter Mobile Number" required maxlength="15">
+                        <label for="id_mobile">Mobile <span id="mobileRequiredStar">*</span></label>
+                        <input type="text" id="id_mobile" name="mobile" value="{{ form.mobile.value|default:'' }}" placeholder="Enter Mobile Number (required for Donor)" maxlength="15">
                         <span class="field-error" data-field="mobile"></span>
                     </div>
                     <div class="form-group">
@@ -269,7 +279,17 @@
         </form>
     </div>
 
-    <!-- Step 1: Welcome modal (donate blood message + icons) -->
+    <!-- Donor only: Step 1 – Blood Donation popup -->
+    <div id="bloodDonationModal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>🩸 Blood Donation</h3>
+            <p class="welcome-msg">You are signing up as a <strong>Blood Donor</strong>. Your contribution can save up to three lives and helps patients in emergencies, surgeries, and critical care.</p>
+            <p class="welcome-ctx">Thank you for choosing to make a difference.</p>
+            <button type="button" class="btn-continue" id="btnBloodDonationContinue">Continue</button>
+        </div>
+    </div>
+
+    <!-- Donor only: Step 2 – Thank You / Happy popup -->
     <div id="welcomeModal" class="modal-overlay welcome-modal hidden">
         <div class="modal">
             <h3>Thank you for signing up</h3>
@@ -312,6 +332,8 @@
         var form = document.getElementById('regForm');
         var formErrors = document.getElementById('formErrors');
         var stepIndicator = document.getElementById('stepIndicator');
+        var bloodDonationModal = document.getElementById('bloodDonationModal');
+        var btnBloodDonationContinue = document.getElementById('btnBloodDonationContinue');
         var welcomeModal = document.getElementById('welcomeModal');
         var btnWelcomeContinue = document.getElementById('btnWelcomeContinue');
         var bloodModal = document.getElementById('bloodGroupModal');
@@ -337,15 +359,19 @@
         }
 
         function validateStep1() {
-            clearStepErrors(['username', 'mobile', 'password', 'confirm_password']);
+            clearStepErrors(['user_role', 'username', 'mobile', 'password', 'confirm_password']);
+            var userRole = (form.querySelector('#id_user_role').value || '').trim();
             var username = (form.querySelector('#id_username').value || '').trim();
             var mobile = (form.querySelector('#id_mobile').value || '').trim().replace(/\D/g, '');
             var password = form.querySelector('#id_password').value || '';
             var confirm = form.querySelector('#id_confirm_password').value || '';
             var ok = true;
+            if (!userRole || (userRole !== 'donor' && userRole !== 'superuser')) { setStepError('user_role', 'Please select Donor or Superuser.'); ok = false; }
             if (!username) { setStepError('username', 'Required.'); ok = false; }
-            if (!mobile) { setStepError('mobile', 'Required.'); ok = false; }
-            else if (mobile.length !== 10) { setStepError('mobile', 'Enter a 10-digit mobile number.'); ok = false; }
+            if (userRole === 'donor') {
+                if (!mobile) { setStepError('mobile', 'Required.'); ok = false; }
+                else if (mobile.length !== 10) { setStepError('mobile', 'Enter a 10-digit mobile number.'); ok = false; }
+            }
             if (!password) { setStepError('password', 'Required.'); ok = false; }
             if (!confirm) { setStepError('confirm_password', 'Required.'); ok = false; }
             else if (password !== confirm) { setStepError('confirm_password', 'Passwords do not match.'); ok = false; }
@@ -378,6 +404,14 @@
         document.getElementById('btnPrev2').addEventListener('click', function() { goToStep(1); });
         document.getElementById('btnNext2').addEventListener('click', function() { goToStep(3); });
         document.getElementById('btnPrev3').addEventListener('click', function() { goToStep(2); });
+
+        form.querySelector('#id_user_role').addEventListener('change', function() {
+            var role = (this.value || '').trim();
+            var mobileInput = form.querySelector('#id_mobile');
+            var star = document.getElementById('mobileRequiredStar');
+            if (role === 'donor') { mobileInput.setAttribute('required', 'required'); if (star) star.style.display = ''; }
+            else { mobileInput.removeAttribute('required'); if (star) star.style.display = 'none'; }
+        });
 
         function showErrors(errors) {
             if (!errors || typeof errors !== 'object') return;
@@ -413,13 +447,22 @@
                 try { res = JSON.parse(xhr.responseText); } catch (err) { res = {}; }
                 if (xhr.status === 200 && res.success) {
                     selectedBg = null;
-                    welcomeModal.classList.remove('hidden');
+                    if (res.role === 'superuser' && res.redirect_url) {
+                        window.location.href = res.redirect_url;
+                        return;
+                    }
+                    bloodDonationModal.classList.remove('hidden');
                 } else {
                     showErrors(res.errors || { __all__: res.message || 'Registration failed.' });
                 }
             };
             xhr.onerror = function() { btn.disabled = false; showErrors({ __all__: 'Network error.' }); };
             xhr.send(fd);
+        });
+
+        btnBloodDonationContinue.addEventListener('click', function() {
+            bloodDonationModal.classList.add('hidden');
+            welcomeModal.classList.remove('hidden');
         });
 
         btnWelcomeContinue.addEventListener('click', function() {

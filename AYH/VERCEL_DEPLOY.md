@@ -2,13 +2,16 @@
 
 ## Required: Set Root Directory
 
-In your Vercel project settings:
+**If this is wrong, you get "404: NOT_FOUND" on the whole site.**
+
+In your Vercel project settings (for **each** project that uses this repo, e.g. `blood-450-capf`, `blood-450-nslr`):
 
 1. Go to **Settings** → **General** → **Root Directory**.
-2. Set it to **`AYH`** (the Django project folder).
-3. Save and redeploy.
+2. Set it to **`AYH`** (the Django project folder inside the repo).
+3. Click **Save**.
+4. Go to **Deployments** → open the **⋯** on the latest deployment → **Redeploy** (so the new root is used).
 
-This ensures `vercel.json` and `AYH/wsgi.py` are resolved correctly.
+This ensures `vercel.json` and `AYH/wsgi.py` are found. Without it, Vercel doesn’t run your Django app and returns 404.
 
 ## Environment variables
 
@@ -45,6 +48,21 @@ If neither is set, the app falls back to SQLite in `/tmp` (data is not persisten
   python manage.py createsuperuser
   ```
   Then redeploy. Login will work once the tables and a user exist.
+
+### Creating a superuser for the deployed app (Supabase)
+
+You cannot run `createsuperuser` on Vercel (no interactive shell). Create the user **on your machine** while pointing at the **same** Supabase database the deployed app uses:
+
+1. In your project root, ensure `.env` has the **same** `DATABASE_URL` as in Vercel (your Supabase URL), e.g.:
+   ```env
+   DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@db.xxxx.supabase.co:5432/postgres
+   ```
+2. In a terminal (from the project root, e.g. `D:\A\Blood450\AYH`):
+   ```bash
+   python manage.py createsuperuser
+   ```
+3. Enter the username, email, and password you want to use for admin login on the deployed site.
+4. The user is saved in **Supabase**. Log in at `https://your-app.vercel.app/accounts/login/` (or `/admin/`) with that username and password.
 
 ---
 
@@ -140,6 +158,14 @@ If neither is set, the app falls back to SQLite in `/tmp` (data is not persisten
 | **Supabase** | Project Settings → Database → Connection string (URI), replace password | Vercel env: `DATABASE_URL` = that URL |
 | **Neon** | Dashboard → Connection string (with password) | Vercel env: `DATABASE_URL` = that URL |
 | **Local** | You build it: `postgresql://user:password@localhost:5432/dbname` | `.env`: `DATABASE_URL` = that URL (and in Vercel only if DB is reachable from internet) |
+
+## Troubleshooting: 404 NOT_FOUND
+
+If you see **404: NOT_FOUND** (Vercel’s page, not Django’s):
+
+1. **Root Directory** – In the project (e.g. `blood-450-capf`) go to **Settings** → **General** → **Root Directory**. Set it to **`AYH`** and save. Then **Redeploy** the latest deployment.
+2. **Repo layout** – Your repo must contain the Django project inside a folder named `AYH` (so there is `AYH/vercel.json`, `AYH/manage.py`, `AYH/AYH/wsgi.py`). Root Directory tells Vercel to use that folder as the project root.
+3. **Build logs** – In **Deployments** → click the latest deployment → check **Building** and **Runtime** logs for Python/import errors. If the build or runtime fails, the function may not be created and you get 404.
 
 ## After deploy
 

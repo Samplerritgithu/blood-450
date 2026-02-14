@@ -16,7 +16,18 @@ class DonorLoginForm(AuthenticationForm):
 
 
 class DonorRegistrationForm(forms.Form):
-    """Full donor registration form (step 1). User logs in with username after blood group."""
+    """Registration form: User Role (Superuser / Donor), then donor-specific fields. Superuser gets is_staff/is_superuser; Donor gets popups + blood group."""
+    USER_ROLE_CHOICES = [
+        ('', '-- Select role --'),
+        ('donor', 'Donor'),
+        ('superuser', 'Superuser'),
+    ]
+    user_role = forms.ChoiceField(
+        choices=USER_ROLE_CHOICES,
+        required=True,
+        label='User Role',
+        widget=forms.Select(attrs={'id': 'id_user_role'})
+    )
     username = forms.CharField(max_length=150, label='Username', widget=forms.TextInput(attrs={'placeholder': 'Choose a username (you will use this to log in)', 'autocomplete': 'username'}))
     mobile = forms.CharField(max_length=15, label='Mobile Number', widget=forms.TextInput(attrs={'placeholder': '10-digit mobile number'}))
     password = forms.CharField(label='Password', widget=forms.PasswordInput(attrs={'placeholder': 'Create password'}), min_length=8)
@@ -60,10 +71,30 @@ class DonorRegistrationForm(forms.Form):
     consent_contact = forms.BooleanField(required=True, label='I agree to be contacted for blood donation requests')
     consent_terms = forms.BooleanField(required=True, label='I accept Terms & Privacy Policy')
 
+    def clean_user_role(self):
+        role = (self.cleaned_data.get('user_role') or '').strip().lower()
+        if role not in ('donor', 'superuser'):
+            raise ValidationError('Please select a role (Donor or Superuser).')
+        return role
+
     def clean_confirm_password(self):
         if self.cleaned_data.get('password') != self.cleaned_data.get('confirm_password'):
             raise ValidationError('Passwords do not match.')
         return self.cleaned_data['confirm_password']
+
+    def clean_mobile(self):
+        """Required for Donor; optional for Superuser (we skip DonorProfile for superuser)."""
+        role = (self.cleaned_data.get('user_role') or '').strip().lower()
+        mobile = (self.cleaned_data.get('mobile') or '').strip()
+        if role == 'donor':
+            if not mobile:
+                raise ValidationError('Mobile number is required for Donor.')
+            if not mobile.isdigit() or len(mobile) < 10:
+                raise ValidationError('Enter a valid 10-digit mobile number.')
+            if User.objects.filter(donor_profile__phone=mobile).exists():
+                raise ValidationError('This mobile number is already registered.')
+            return mobile
+        return mobile or ''
 
     def clean_username(self):
         raw = self.cleaned_data.get('username', '').strip()
@@ -77,14 +108,6 @@ class DonorRegistrationForm(forms.Form):
         if User.objects.filter(username__iexact=username).exists():
             raise ValidationError('This username is already taken.')
         return username
-
-    def clean_mobile(self):
-        mobile = self.cleaned_data.get('mobile', '').strip()
-        if not mobile.isdigit() or len(mobile) < 10:
-            raise ValidationError('Enter a valid 10-digit mobile number.')
-        if User.objects.filter(donor_profile__phone=mobile).exists():
-            raise ValidationError('This mobile number is already registered.')
-        return mobile
 
     def clean_alternate_mobile(self):
         val = (self.cleaned_data.get('alternate_mobile') or '').strip()
