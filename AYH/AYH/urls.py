@@ -28,6 +28,7 @@ urlpatterns = [
     # Web Authentication (Django Templates) – custom login so email/username is case-insensitive
     path('accounts/login/', DonorLoginView.as_view(), name='login'),
     path('accounts/', include('django.contrib.auth.urls')),
+    path('login/', RedirectView.as_view(url='/accounts/login/', permanent=False), name='login_alias'),
     
     # REST API Endpoints (for Flutter)
     path('api/', include('careapp.api_urls')),

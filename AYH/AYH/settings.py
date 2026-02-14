@@ -29,10 +29,11 @@ SECRET_KEY = config(
     default="django-insecure-38eb&2sar0s=x(93uf$yxu7ab4s!*7$ayf0^z^*70y!8g7)h$b",
 )
 
-DEBUG = config("DJANGO_DEBUG", default=True, cast=bool)
-
 # Consider Vercel as production by default
 IS_PRODUCTION = (config("DJANGO_ENV", default="") == "production") or bool(os.environ.get("VERCEL"))
+
+# Default to DEBUG=False in production unless explicitly enabled
+DEBUG = config("DJANGO_DEBUG", default=not IS_PRODUCTION, cast=bool)
 
 ALLOWED_HOSTS = [
     "127.0.0.1",
@@ -162,7 +163,14 @@ STATICFILES_DIRS = [
 ]
 
 
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+if os.environ.get("VERCEL"):
+    # On Vercel, avoid manifest lookups if collectstatic isn't persisted.
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
+else:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# Allow WhiteNoise to serve directly from app static dirs when needed
+WHITENOISE_USE_FINDERS = True
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = str(BASE_DIR / "media")
@@ -173,9 +181,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # AUTH / LOGIN ROUTES (keep ONE set)
 # ==============================================================================
 
-LOGIN_URL = "/login/"
+LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/home/"
-LOGOUT_REDIRECT_URL = "/login/"
+LOGOUT_REDIRECT_URL = "/accounts/login/"
 
 # ==============================================================================
 # SESSIONS (Lifetime login)
@@ -203,11 +211,8 @@ CSRF_COOKIE_PATH = "/"
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
-    "https://*.vercel.app",
-    "https://blood-450-capf.vercel.app",
-    "https://*.vercel.app",
+    "https://blood-450-96iv.vercel.app",
 ]
-
 
 CSRF_FAILURE_VIEW = "django.views.csrf.csrf_failure"
 
