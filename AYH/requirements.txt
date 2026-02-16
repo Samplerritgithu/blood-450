@@ -1,0 +1,22 @@
+# Django Core
+Django==5.2.10
+
+# Django REST Framework
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+
+# CORS Headers (for Flutter/Mobile apps)
+django-cors-headers==4.3.1
+
+# PostgreSQL (for production / Vercel)
+psycopg2-binary==2.9.9
+dj-database-url==2.2.0
+
+# Additional utilities
+python-decouple==3.8  # For environment variables
+Pillow==10.1.0  # For image handling (if needed later)
+twilio>=8.0.0  # Optional: for sending OTP SMS (set TWILIO_* in settings/env)
+
+# Production server (optional)
+gunicorn==21.2.0
+whitenoise==6.6.0  # Static files serving

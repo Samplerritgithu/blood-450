@@ -1,0 +1,468 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Blood450</title>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh; position: relative; }
+        body::before { content: ''; position: fixed; inset: 0; background: url("{% static 'images/register.jpg' %}") center/cover no-repeat fixed; z-index: -2; }
+        body::after { content: ''; position: fixed; inset: 0; background: linear-gradient(135deg, rgba(254,242,242,0.88) 0%, rgba(255,255,255,0.88) 50%, rgba(240,253,244,0.88) 100%); z-index: -1; }
+        .reg-page { max-width: 960px; margin: 0 auto; padding: 16px 20px; }
+        .reg-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+        .reg-header h1 { font-size: 1.35rem; color: #1e293b; font-weight: 700; }
+        .reg-header a { color: #c0392b; font-weight: 600; text-decoration: none; padding: 6px 12px; border-radius: 8px; }
+        .reg-header a:hover { background: #fef2f2; }
+
+        .reg-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; padding: 16px 20px; margin-bottom: 14px; }
+        .reg-card h2 { font-size: 0.9rem; color: #334155; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 2px solid #f1f5f9; display: flex; align-items: center; gap: 6px; }
+        .form-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 14px; }
+        .form-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; }
+        @media (max-width: 900px) { .form-grid-4 { grid-template-columns: repeat(2, 1fr); } .form-grid-2 { grid-template-columns: 1fr; } }
+        @media (max-width: 500px) { .form-grid-4 { grid-template-columns: 1fr; } }
+        .form-group { margin-bottom: 0; }
+        .form-group.span-2 { grid-column: span 2; }
+        .form-group.span-4 { grid-column: 1 / -1; }
+        @media (max-width: 900px) { .form-group.span-2 { grid-column: span 1; } }
+        .form-group label { display: block; font-size: 0.7rem; font-weight: 600; color: #475569; margin-bottom: 3px; }
+        .form-group input[type="text"], .form-group input[type="email"], .form-group input[type="password"], .form-group input[type="number"], .form-group input[type="date"], .form-group select { width: 100%; padding: 7px 10px; font-size: 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #c0392b; box-shadow: 0 0 0 2px rgba(192,57,43,0.12); }
+        .form-group .help { font-size: 0.65rem; color: #64748b; margin-top: 1px; }
+        .radio-group, .checkbox-group { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+        .radio-group label, .checkbox-group label { display: inline-flex; align-items: center; gap: 5px; font-weight: 500; cursor: pointer; font-size: 0.8rem; }
+        .radio-group input, .checkbox-group input { width: auto; }
+        .btn-submit { width: 100%; padding: 10px; font-size: 0.95rem; font-weight: 600; color: #fff; background: linear-gradient(180deg, #c0392b 0%, #a93226 100%); border: none; border-radius: 10px; cursor: pointer; margin-top: 4px; }
+        .btn-submit:hover { opacity: 0.95; }
+        .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+        .alert-error { padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; font-size: 0.78rem; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .field-error { font-size: 0.65rem; color: #dc2626; margin-top: 1px; }
+
+        /* Wizard */
+        .step-indicator { font-size: 0.8rem; font-weight: 600; color: #64748b; margin-bottom: 12px; text-align: right; }
+        .wizard-step { display: none; }
+        .wizard-step.active { display: block; }
+        .wizard-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+        .wizard-buttons .btn-submit { width: auto; }
+        .btn-wizard { padding: 10px 20px; font-size: 0.9rem; font-weight: 600; color: #fff; background: linear-gradient(180deg, #c0392b 0%, #a93226 100%); border: none; border-radius: 10px; cursor: pointer; }
+        .btn-wizard:hover { opacity: 0.95; }
+        .btn-wizard.btn-prev { background: linear-gradient(180deg, #64748b 0%, #475569 100%); }
+
+        /* Modals */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; backdrop-filter: blur(2px); }
+        .modal-overlay.hidden { display: none; }
+        .modal { background: #fff; border-radius: 16px; box-shadow: 0 24px 48px rgba(0,0,0,0.18); max-width: 420px; width: 100%; padding: 28px; }
+        .modal h3 { font-size: 1.15rem; margin-bottom: 12px; color: #1e293b; text-align: center; font-weight: 700; }
+        .blood-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+        .blood-btn { padding: 12px; font-size: 1rem; font-weight: 700; border: 2px solid #e2e8f0; border-radius: 10px; background: #fff; cursor: pointer; color: #334155; transition: all 0.2s; }
+        .blood-btn:hover { border-color: #c0392b; background: #fef2f2; color: #c0392b; }
+        .blood-btn.selected { border-color: #c0392b; background: #c0392b; color: #fff; }
+        .modal .btn-continue { width: 100%; padding: 12px; font-weight: 600; color: #fff; background: #c0392b; border: none; border-radius: 10px; cursor: pointer; margin-top: 10px; font-size: 0.95rem; }
+        .modal .btn-continue:disabled { opacity: 0.5; cursor: not-allowed; }
+        .hidden { display: none !important; }
+
+        /* Welcome modal */
+        .welcome-modal .modal { max-width: 440px; }
+        .welcome-modal .welcome-icons { display: flex; justify-content: center; gap: 16px; margin-bottom: 16px; }
+        .welcome-modal .welcome-icons span { font-size: 2.2rem; }
+        .welcome-modal .welcome-msg { text-align: center; font-size: 0.95rem; color: #475569; line-height: 1.55; margin-bottom: 8px; }
+        .welcome-modal .welcome-ctx { text-align: center; font-size: 0.8rem; color: #64748b; line-height: 1.5; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="reg-page">
+        <div class="reg-header">
+            <h1>🩸 Blood450 – Donor Registration</h1>
+            <a href="{% url 'login' %}">← Back to Login</a>
+        </div>
+
+        <div id="formErrors" class="alert-error hidden"></div>
+        {% if register_error %}<div id="registerError" class="alert-error">{{ register_error }}</div>{% endif %}
+
+        <div id="stepIndicator" class="step-indicator">Step 1 of 3</div>
+
+        <form id="regForm" method="post" action="{% url 'donor_register' %}" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div id="wizardStep1" class="wizard-step active">
+            <div class="reg-card">
+                <h2>User Role &amp; Personal details</h2>
+                <div class="form-grid-4">
+                    <div class="form-group">
+                        <label for="id_username">Username *</label>
+                        <input type="text" id="id_username" name="username" value="{{ form.username.value|default:'' }}" placeholder="Enter Username" required maxlength="50" autocomplete="username">
+                        <span class="field-error" data-field="username"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_mobile">Mobile *</label>
+                        <input type="text" id="id_mobile" name="mobile" value="{{ form.mobile.value|default:'' }}" placeholder="Enter Mobile Number" maxlength="15" required>
+                        <span class="field-error" data-field="mobile"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_password">Password *</label>
+                        <input type="password" id="id_password" name="password" placeholder="Enter Password" required minlength="8">
+                        <span class="field-error" data-field="password"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_confirm_password">Confirm Password *</label>
+                        <input type="password" id="id_confirm_password" name="confirm_password" placeholder=" Enter Confirm  Password" required>
+                        <span class="field-error" data-field="confirm_password"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_gender">Gender</label>
+                        <select id="id_gender" name="gender">
+                            <option value="">-- Select --</option>
+                            <option value="M">Male</option>
+                            <option value="F">Female</option>
+                            <option value="O">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_date_of_birth">Date of Birth</label>
+                        <input type="date" id="id_date_of_birth" name="date_of_birth" value="{{ form.date_of_birth.value|default:'' }}">
+                        <span class="help">For matching.</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_alternate_mobile">Alternate Mobile</label>
+                        <input type="text" id="id_alternate_mobile" name="alternate_mobile" value="{{ form.alternate_mobile.value|default:'' }}" placeholder="10-digit" maxlength="15">
+                        <span class="field-error" data-field="alternate_mobile"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_preferred_language">Preferred Language</label>
+                        <select id="id_preferred_language" name="preferred_language">
+                            <option value="">-- Select --</option>
+                            <option value="english" {% if form.preferred_language.value == 'english' %}selected{% endif %}>English</option>
+                            <option value="hindi" {% if form.preferred_language.value == 'hindi' %}selected{% endif %}>Hindi</option>
+                            <option value="odia" {% if form.preferred_language.value == 'odia' %}selected{% endif %}>Odia</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_preferred_contact_time">Preferred Contact Time</label>
+                        <select id="id_preferred_contact_time" name="preferred_contact_time">
+                            <option value="">-- Select --</option>
+                            <option value="morning" {% if form.preferred_contact_time.value == 'morning' %}selected{% endif %}>Morning</option>
+                            <option value="afternoon" {% if form.preferred_contact_time.value == 'afternoon' %}selected{% endif %}>Afternoon</option>
+                            <option value="evening" {% if form.preferred_contact_time.value == 'evening' %}selected{% endif %}>Evening</option>
+                            <option value="any" {% if form.preferred_contact_time.value == 'any' %}selected{% endif %}>Any</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_occupation">Occupation</label>
+                        <input type="text" id="id_occupation" name="occupation" value="{{ form.occupation.value|default:'' }}" placeholder="Enter Occupation" maxlength="100">
+                    </div>
+                    <div class="form-group">
+                        <label for="id_emergency_contact_name">Emergency Contact Name</label>
+                        <input type="text" id="id_emergency_contact_name" name="emergency_contact_name" value="{{ form.emergency_contact_name.value|default:'' }}" placeholder="Enter Emergency Contact Name" maxlength="100">
+                    </div>
+                    <div class="form-group">
+                        <label for="id_emergency_contact_number">Emergency Contact Number</label>
+                        <input type="text" id="id_emergency_contact_number" name="emergency_contact_number" value="{{ form.emergency_contact_number.value|default:'' }}" placeholder="Enter Emergency Phone Number" maxlength="15">
+                        <span class="field-error" data-field="emergency_contact_number"></span>
+                    </div>
+                    <div class="form-group span-2">
+                        <label for="id_profile_photo">Profile Photo</label>
+                        <input type="file" id="id_profile_photo" name="profile_photo" accept="image/*">
+                        <span class="help">Optional. JPG, PNG, etc.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="wizard-buttons">
+                <button type="button" class="btn-wizard" id="btnNext1">Next</button>
+            </div>
+            </div>
+
+            <div id="wizardStep2" class="wizard-step">
+            <div class="reg-card">
+                <h2>Location</h2>
+                <div class="form-grid-4">
+                    <div class="form-group">
+                        <label for="id_state">State</label>
+                        <input type="text" id="id_state" name="state" value="{{ form.state.value|default:'' }}" placeholder="State">
+                    </div>
+                    <div class="form-group">
+                        <label for="id_city">City</label>
+                        <input type="text" id="id_city" name="city" value="{{ form.city.value|default:'' }}" placeholder="City">
+                    </div>
+                    <div class="form-group">
+                        <label for="id_area">Area / Locality</label>
+                        <input type="text" id="id_area" name="area" value="{{ form.area.value|default:'' }}" placeholder="Area">
+                    </div>
+                    <div class="form-group">
+                        <label for="id_pincode">Pincode</label>
+                        <input type="text" id="id_pincode" name="pincode" value="{{ form.pincode.value|default:'' }}" placeholder="Pincode">
+                    </div>
+                    <div class="form-group">
+                        <label for="id_weight_kg">Weight (kg)</label>
+                        <input type="number" id="id_weight_kg" name="weight_kg" value="{{ form.weight_kg.value|default:'' }}" placeholder="Optional" step="0.1" min="0">
+                    </div>
+                </div>
+            </div>
+            <div class="wizard-buttons">
+                <button type="button" class="btn-wizard btn-prev" id="btnPrev2">Previous</button>
+                <button type="button" class="btn-wizard" id="btnNext2">Next</button>
+            </div>
+            </div>
+
+            <div id="wizardStep3" class="wizard-step">
+            <div class="reg-card">
+                <h2>Health &amp; Availability</h2>
+                <div class="form-grid-4">
+                    <div class="form-group span-2">
+                        <label>Donated blood before?</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="donated_before" value=""> --</label>
+                            <label><input type="radio" name="donated_before" value="yes"> Yes</label>
+                            <label><input type="radio" name="donated_before" value="no"> No</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_last_donation_date">Last donation date</label>
+                        <input type="date" id="id_last_donation_date" name="last_donation_date" value="{{ form.last_donation_date.value|default:'' }}">
+                    </div>
+                    <div class="form-group span-2">
+                        <label>Medical conditions?</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="medical_conditions" value=""> --</label>
+                            <label><input type="radio" name="medical_conditions" value="yes"> Yes</label>
+                            <label><input type="radio" name="medical_conditions" value="no"> No</label>
+                        </div>
+                    </div>
+                    <div class="form-group span-2">
+                        <label>Currently healthy?</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="currently_healthy" value=""> --</label>
+                            <label><input type="radio" name="currently_healthy" value="yes"> Yes</label>
+                            <label><input type="radio" name="currently_healthy" value="no"> No</label>
+                        </div>
+                    </div>
+                    <div class="form-group span-2">
+                        <label>Emergency donation? *</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="emergency_available" value="yes" checked> Yes</label>
+                            <label><input type="radio" name="emergency_available" value="no"> No</label>
+                        </div>
+                    </div>
+                    <div class="form-group span-2">
+                        <label>Contact preference</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="preferred_contact" value="call" checked> Call</label>
+                            <label><input type="radio" name="preferred_contact" value="whatsapp"> WhatsApp</label>
+                            <label><input type="radio" name="preferred_contact" value="sms"> SMS</label>
+                        </div>
+                    </div>
+                    <div class="form-group span-4 checkbox-group">
+                        <label><input type="checkbox" name="consent_contact" id="id_consent_contact" required> I agree to be contacted for blood donation requests</label>
+                        <span class="field-error" data-field="consent_contact"></span>
+                    </div>
+                    <div class="form-group span-4 checkbox-group">
+                        <label><input type="checkbox" name="consent_terms" id="id_consent_terms" required> I accept Terms &amp; Privacy Policy</label>
+                        <span class="field-error" data-field="consent_terms"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="wizard-buttons">
+                <button type="button" class="btn-wizard btn-prev" id="btnPrev3">Previous</button>
+                <button type="submit" class="btn-submit" id="btnSubmit" style="margin-top:0;">Register</button>
+            </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Donor only: Step 1 – Blood Donation popup -->
+    <div id="bloodDonationModal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>🩸 Blood Donation</h3>
+            <p class="welcome-msg">You are signing up as a <strong>Blood Donor</strong>. Your contribution can save up to three lives and helps patients in emergencies, surgeries, and critical care.</p>
+            <p class="welcome-ctx">Thank you for choosing to make a difference.</p>
+            <button type="button" class="btn-continue" id="btnBloodDonationContinue">Continue</button>
+        </div>
+    </div>
+
+    <!-- Donor only: Step 2 – Thank You / Happy popup -->
+    <div id="welcomeModal" class="modal-overlay welcome-modal hidden">
+        <div class="modal">
+            <h3>Thank you for signing up</h3>
+            <div class="welcome-icons">
+                <span title="Donate">🩸</span>
+                <span title="Save lives">❤️</span>
+                <span title="Help others">🤝</span>
+            </div>
+            <p class="welcome-msg">You're choosing to <strong>donate blood to needy people</strong>. Every donation can save up to three lives and helps patients in emergencies, surgeries, and critical care.</p>
+            <p class="welcome-ctx">Next, select your blood group so we can match you with requests. Then you'll be taken to your donor dashboard.</p>
+            <button type="button" class="btn-continue" id="btnWelcomeContinue">Continue → Choose blood group</button>
+        </div>
+    </div>
+
+    <!-- Step 2: Blood group modal – form POST so server can set session cookie and redirect -->
+    <div id="bloodGroupModal" class="modal-overlay hidden">
+        <div class="modal">
+            <form id="bloodGroupForm" method="post" action="{% url 'donor_register_select_blood_group' %}">
+                {% csrf_token %}
+                <input type="hidden" name="blood_group" id="bloodGroupInput" value="">
+                <h3>Select your blood group</h3>
+                <div class="blood-grid" id="bloodGrid">
+                    <button type="button" class="blood-btn" data-bg="A+">A+</button>
+                    <button type="button" class="blood-btn" data-bg="A-">A-</button>
+                    <button type="button" class="blood-btn" data-bg="B+">B+</button>
+                    <button type="button" class="blood-btn" data-bg="B-">B-</button>
+                    <button type="button" class="blood-btn" data-bg="AB+">AB+</button>
+                    <button type="button" class="blood-btn" data-bg="AB-">AB-</button>
+                    <button type="button" class="blood-btn" data-bg="O+">O+</button>
+                    <button type="button" class="blood-btn" data-bg="O-">O-</button>
+                </div>
+                <div id="bloodModalError" class="alert-error hidden"></div>
+                <button type="button" class="btn-continue" id="btnBloodContinue" disabled>Continue → Go to Dashboard</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var form = document.getElementById('regForm');
+        var formErrors = document.getElementById('formErrors');
+        var stepIndicator = document.getElementById('stepIndicator');
+        var bloodDonationModal = document.getElementById('bloodDonationModal');
+        var btnBloodDonationContinue = document.getElementById('btnBloodDonationContinue');
+        var welcomeModal = document.getElementById('welcomeModal');
+        var btnWelcomeContinue = document.getElementById('btnWelcomeContinue');
+        var bloodModal = document.getElementById('bloodGroupModal');
+        var bloodGrid = document.getElementById('bloodGroupModal').querySelector('#bloodGrid');
+        var bloodContinue = document.getElementById('btnBloodContinue');
+        var bloodModalError = document.getElementById('bloodModalError');
+        var selectedBg = null;
+        var currentStep = 1;
+        var totalSteps = 3;
+
+        function getCookie(name) {
+            var v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+            return v ? v[2] : null;
+        }
+
+        function setStepError(field, msg) {
+            var fe = document.querySelector('.field-error[data-field="' + field + '"]');
+            if (fe) fe.textContent = msg || '';
+        }
+
+        function clearStepErrors(fields) {
+            (fields || []).forEach(function(f) { setStepError(f, ''); });
+        }
+
+        function validateStep1() {
+            clearStepErrors(['username', 'mobile', 'password', 'confirm_password']);
+            var username = (form.querySelector('#id_username').value || '').trim();
+            var mobile = (form.querySelector('#id_mobile').value || '').trim().replace(/\D/g, '');
+            var password = form.querySelector('#id_password').value || '';
+            var confirm = form.querySelector('#id_confirm_password').value || '';
+            var ok = true;
+            if (!username) { setStepError('username', 'Required.'); ok = false; }
+            if (!mobile) { setStepError('mobile', 'Required.'); ok = false; }
+            else if (mobile.length !== 10) { setStepError('mobile', 'Enter a 10-digit mobile number.'); ok = false; }
+            if (!password) { setStepError('password', 'Required.'); ok = false; }
+            if (!confirm) { setStepError('confirm_password', 'Required.'); ok = false; }
+            else if (password !== confirm) { setStepError('confirm_password', 'Passwords do not match.'); ok = false; }
+            return ok;
+        }
+
+        function validateStep3() {
+            clearStepErrors(['consent_contact', 'consent_terms']);
+            var consentContact = form.querySelector('#id_consent_contact').checked;
+            var consentTerms = form.querySelector('#id_consent_terms').checked;
+            var ok = true;
+            if (!consentContact) { setStepError('consent_contact', 'Please agree to be contacted.'); ok = false; }
+            if (!consentTerms) { setStepError('consent_terms', 'Please accept Terms & Privacy Policy.'); ok = false; }
+            return ok;
+        }
+
+        function goToStep(step) {
+            document.querySelectorAll('.wizard-step').forEach(function(el) { el.classList.remove('active'); });
+            var el = document.getElementById('wizardStep' + step);
+            if (el) el.classList.add('active');
+            stepIndicator.textContent = 'Step ' + step + ' of ' + totalSteps;
+            currentStep = step;
+        }
+
+        document.getElementById('btnNext1').addEventListener('click', function() {
+            if (!validateStep1()) return;
+            formErrors.classList.add('hidden');
+            goToStep(2);
+        });
+        document.getElementById('btnPrev2').addEventListener('click', function() { goToStep(1); });
+        document.getElementById('btnNext2').addEventListener('click', function() { goToStep(3); });
+        document.getElementById('btnPrev3').addEventListener('click', function() { goToStep(2); });
+
+        function showErrors(errors) {
+            if (!errors || typeof errors !== 'object') return;
+            var msg = [];
+            document.querySelectorAll('.field-error[data-field]').forEach(function(el) { el.textContent = ''; });
+            for (var k in errors) {
+                var arr = errors[k];
+                var text = Array.isArray(arr) ? arr[0] : arr;
+                msg.push((k + ': ' + text));
+                var fe = document.querySelector('.field-error[data-field="' + k + '"]');
+                if (fe) fe.textContent = text;
+            }
+            formErrors.textContent = msg.join(' ');
+            formErrors.classList.remove('hidden');
+        }
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (!validateStep1()) { goToStep(1); return; }
+            if (!validateStep3()) { goToStep(3); return; }
+            formErrors.classList.add('hidden');
+            document.querySelectorAll('.field-error[data-field]').forEach(function(el) { el.textContent = ''; });
+            var btn = document.getElementById('btnSubmit');
+            btn.disabled = true;
+            var fd = new FormData(form);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', form.action);
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+            xhr.setRequestHeader('X-CSRFToken', getCookie('csrftoken'));
+            xhr.onload = function() {
+                btn.disabled = false;
+                var res = {};
+                try { res = JSON.parse(xhr.responseText); } catch (err) { res = {}; }
+                if (xhr.status === 200 && res.success) {
+                    selectedBg = null;
+                    bloodDonationModal.classList.remove('hidden');
+                } else {
+                    showErrors(res.errors || { __all__: res.message || 'Registration failed.' });
+                }
+            };
+            xhr.onerror = function() { btn.disabled = false; showErrors({ __all__: 'Network error.' }); };
+            xhr.send(fd);
+        });
+
+        btnBloodDonationContinue.addEventListener('click', function() {
+            bloodDonationModal.classList.add('hidden');
+            welcomeModal.classList.remove('hidden');
+        });
+
+        btnWelcomeContinue.addEventListener('click', function() {
+            welcomeModal.classList.add('hidden');
+            bloodModal.classList.remove('hidden');
+            bloodGrid.querySelectorAll('.blood-btn').forEach(function(b) { b.classList.remove('selected'); });
+            bloodContinue.disabled = true;
+            bloodModalError.classList.add('hidden');
+        });
+
+        bloodGrid.querySelectorAll('.blood-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                bloodGrid.querySelectorAll('.blood-btn').forEach(function(b) { b.classList.remove('selected'); });
+                btn.classList.add('selected');
+                selectedBg = btn.getAttribute('data-bg');
+                bloodContinue.disabled = false;
+            });
+        });
+
+        bloodContinue.addEventListener('click', function() {
+            if (!selectedBg) return;
+            bloodModalError.classList.add('hidden');
+            document.getElementById('bloodGroupInput').value = selectedBg;
+            document.getElementById('bloodGroupForm').submit();
+        });
+    })();
+    </script>
+</body>
+</html>
