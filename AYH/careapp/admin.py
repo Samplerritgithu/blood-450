@@ -4,7 +4,7 @@ from .models import (
     AdminNotification, RequestTimeline, EtaTracking, DelayReason, DonorAssignment,
     DonorMovement, FallbackAction, RadiusExpansionLog, StandbyAction,
     BloodBankMaster, BloodBankFallback, HospitalMaster, HospitalMetrics,
-    DimDate, DimCity,
+    DimDate, DimCity, RequestDonorPoolAssignment,
 )
 
 
@@ -80,6 +80,14 @@ class DelayReasonAdmin(admin.ModelAdmin):
 
 
 
+
+
+@admin.register(RequestDonorPoolAssignment)
+class RequestDonorPoolAssignmentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'request', 'donor', 'pool_type', 'state', 'rank', 'distance_km', 'responded_at')
+    list_filter = ('pool_type', 'state')
+    search_fields = ('request__id', 'donor__username')
+    readonly_fields = ('created_at',)
 
 
 @admin.register(DonorAssignment)

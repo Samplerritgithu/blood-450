@@ -186,6 +186,12 @@
             color: #9ca3af;
         }
 
+        .btn-google-login:hover {
+            background: #f8fafc;
+            border-color: #c0392b;
+            color: #c0392b;
+        }
+
         @media (max-width: 900px) {
             .login-page { flex-direction: column; }
             .login-page__left { min-height: 220px; }
@@ -205,10 +211,21 @@
                 {% if request.GET.registered %}
                     <div class="login-alert login-alert--success" role="status">Registration complete. Sign in with your username and password to go to your dashboard.</div>
                 {% endif %}
+                {% if messages %}
+                    {% for message in messages %}
+                        {% if "success" in message.tags %}
+                            <div class="login-alert login-alert--success" role="status">{{ message }}</div>
+                        {% else %}
+                            <div class="login-alert" role="alert">{{ message }}</div>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
                 {% if form.errors %}
                     <div class="login-alert" role="alert">Invalid username or password. Please try again.</div>
                 {% endif %}
 
+              
+                {% comment %} <p style="text-align: center; margin: 0 0 12px 0; font-size: 0.7rem; color: #9ca3af;">Requires internet. — or sign in with username —</p> {% endcomment %}
                 <form method="post" action="{% url 'login' %}" class="login-form">
                     {% csrf_token %}
                     <div class="form-group">

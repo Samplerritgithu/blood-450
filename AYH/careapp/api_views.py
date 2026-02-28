@@ -15,7 +15,7 @@ from django.shortcuts import get_object_or_404
 
 from django.conf import settings as django_settings
 
-from .models import DonorProfile, BloodRequest, Notification, DonorResponse, AdminNotification
+from .models import DonorProfile, BloodRequest, Notification, DonorResponse, AdminNotification, RequestDonorPoolAssignment
 from .utils import haversine_km, donor_has_location
 import logging
 
@@ -492,7 +492,19 @@ def respond_to_request(request):
         )
     
     blood_request = get_object_or_404(BloodRequest, id=blood_request_id)
-    
+
+    # First accept closes the request for others
+    if response_value == 'accepted':
+        already_accepted = DonorResponse.objects.filter(
+            blood_request=blood_request,
+            response='accepted'
+        ).exclude(donor=request.user).exists()
+        if already_accepted:
+            return Response(
+                {'error': 'This request has already been accepted by another donor. It is closed for further acceptances.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     # Create or update response
     donor_response, created = DonorResponse.objects.update_or_create(
         blood_request=blood_request,
@@ -505,18 +517,66 @@ def respond_to_request(request):
             blood_request=blood_request,
             donor=request.user,
         )
-    
+
+    # Update Active/Standby pool and promote standby on reject
+    try:
+        from .donor_pool_service import handle_donor_response_for_pool
+        handle_donor_response_for_pool(blood_request.id, request.user.id, response_value == 'accepted')
+    except Exception:
+        logger.exception("api respond_to_request: pool update failed")
+
     # Mark notification as read
     Notification.objects.filter(
         user=request.user,
         blood_request=blood_request
     ).update(is_read=True)
-    
+
     action = 'created' if created else 'updated'
-    
     return Response({
         'message': f'Response {action} successfully',
         'response': DonorResponseSerializer(donor_response).data
+    }, status=status.HTTP_200_OK)
+
+
+# ==============================================================================
+# DONOR POOLS (Active / Standby)
+# ==============================================================================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def request_donor_pools(request, request_id):
+    """
+    GET /api/requests/<id>/donor-pools/
+    Returns Active and Standby donor lists for the request (ordered by distance/rank).
+    """
+    blood_request = get_object_or_404(BloodRequest, id=request_id)
+    assignments = RequestDonorPoolAssignment.objects.filter(
+        request=blood_request
+    ).select_related('donor', 'donor__donor_profile').order_by('rank')
+    active = []
+    standby = []
+    for a in assignments:
+        item = {
+            'donor_id': a.donor_id,
+            'username': a.donor.username,
+            'distance_km': a.distance_km,
+            'state': a.state,
+            'rank': a.rank,
+            'responded_at': a.responded_at.isoformat() if a.responded_at else None,
+        }
+        try:
+            item['phone'] = a.donor.donor_profile.phone
+            item['blood_group'] = a.donor.donor_profile.blood_group
+        except Exception:
+            item['phone'] = None
+            item['blood_group'] = None
+        if a.pool_type == RequestDonorPoolAssignment.POOL_TYPE_ACTIVE:
+            active.append(item)
+        else:
+            standby.append(item)
+    return Response({
+        'active': active,
+        'standby': standby,
     }, status=status.HTTP_200_OK)
 
 

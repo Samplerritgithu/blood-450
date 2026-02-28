@@ -61,6 +61,88 @@
             <div style="font-size: 12px; opacity: 0.9;">Donors Accepted</div>
         </div>
     </div>
+    <div style="margin-bottom: 8px;"><strong style="color: #1f2937;">Donors to track</strong></div>
+    <p style="font-size: 11px; color: #6b7280; margin: 0 0 8px 0;">Compatible blood groups are notified (e.g. O- can donate to O+, so O- donors correctly appear for O+ requests).</p>
+    {% if notified_donors_list %}
+    <div style="max-height: 200px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 16px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+                <tr style="background: #f9fafb; border-bottom: 2px solid #e5e7eb;">
+                    <th style="padding: 8px 10px; text-align: left;">ID</th>
+                    <th style="padding: 8px 10px; text-align: left;">Name</th>
+                    <th style="padding: 8px 10px; text-align: left;">Blood group</th>
+                    <th style="padding: 8px 10px; text-align: left;">Phone</th>
+                    <th style="padding: 8px 10px; text-align: left;">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in notified_donors_list %}
+                <tr style="border-bottom: 1px solid #e5e7eb;">
+                    <td style="padding: 8px 10px; font-size: 12px; color: #6b7280;">{{ d.donor_id }}</td>
+                    <td style="padding: 8px 10px; font-weight: 600;">{{ d.username }}</td>
+                    <td style="padding: 8px 10px;">{{ d.blood_group|default:"—" }}</td>
+                    <td style="padding: 8px 10px;">{{ d.phone|default:"—" }}</td>
+                    <td style="padding: 8px 10px;">
+                        {% if d.status_key == 'accepted' %}
+                        <span style="background: #10b981; color: white; padding: 2px 8px; border-radius: 6px; font-size: 11px;">Accepted</span>
+                        {% elif d.status_key == 'rejected' %}
+                        <span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 6px; font-size: 11px;">Declined</span>
+                        {% else %}
+                        <span style="background: #6b7280; color: white; padding: 2px 8px; border-radius: 6px; font-size: 11px;">Pending</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: #6b7280; font-size: 13px; margin-bottom: 16px;">No donors were notified for this request.</p>
+    {% endif %}
+    {% if active_assignments or standby_assignments %}
+    <div style="margin-bottom: 12px;"><strong style="color: #1f2937;">Active donors</strong> <span style="font-size: 11px; color: #6b7280;">(nearest first; on reject, standby is promoted)</span></div>
+    {% if active_assignments %}
+    <div style="max-height: 140px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead><tr style="background: #f0fdf4;"><th style="padding: 6px 10px; text-align: left;">Name</th><th style="padding: 6px 10px;">Blood</th><th style="padding: 6px 10px;">Phone</th><th style="padding: 6px 10px;">Distance</th><th style="padding: 6px 10px;">State</th></tr></thead>
+            <tbody>
+                {% for item in active_assignments %}
+                <tr style="border-bottom: 1px solid #e5e7eb;">
+                    <td style="padding: 6px 10px; font-weight: 600;">{{ item.username }}</td>
+                    <td style="padding: 6px 10px;">{{ item.blood_group|default:"—" }}</td>
+                    <td style="padding: 6px 10px;">{{ item.phone|default:"—" }}</td>
+                    <td style="padding: 6px 10px;">{% if item.distance_km != None %}{{ item.distance_km }} km{% else %}—{% endif %}</td>
+                    <td style="padding: 6px 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 10px; {% if item.state == 'ACCEPTED' %}background:#10b981;color:white{% elif item.state == 'REJECTED' %}background:#ef4444;color:white{% else %}background:#6b7280;color:white{% endif %}">{{ item.state }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="font-size: 12px; color: #6b7280; margin-bottom: 12px;">No active pool for this request (created without location or pool not used).</p>
+    {% endif %}
+    <div style="margin-bottom: 8px;"><strong style="color: #1f2937;">Standby donors</strong></div>
+    {% if standby_assignments %}
+    <div style="max-height: 120px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 16px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead><tr style="background: #fef3c7;"><th style="padding: 6px 10px; text-align: left;">Name</th><th style="padding: 6px 10px;">Blood</th><th style="padding: 6px 10px;">Phone</th><th style="padding: 6px 10px;">Distance</th><th style="padding: 6px 10px;">State</th></tr></thead>
+            <tbody>
+                {% for item in standby_assignments %}
+                <tr style="border-bottom: 1px solid #e5e7eb;">
+                    <td style="padding: 6px 10px; font-weight: 600;">{{ item.username }}</td>
+                    <td style="padding: 6px 10px;">{{ item.blood_group|default:"—" }}</td>
+                    <td style="padding: 6px 10px;">{{ item.phone|default:"—" }}</td>
+                    <td style="padding: 6px 10px;">{% if item.distance_km != None %}{{ item.distance_km }} km{% else %}—{% endif %}</td>
+                    <td style="padding: 6px 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 10px; background: #6b7280; color: white;">{{ item.state }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="font-size: 12px; color: #6b7280; margin-bottom: 16px;">No standby donors.</p>
+    {% endif %}
+    {% endif %}
     <div style="margin-bottom: 12px;"><strong style="color: #1f2937;">Accepted Donors</strong></div>
     {% if accepted_responses %}
     <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px;">

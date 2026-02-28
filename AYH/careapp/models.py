@@ -63,7 +63,7 @@ class DonorProfile(models.Model):
     ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='donor_profile')
-    phone = models.CharField(max_length=15)
+    phone = models.CharField(max_length=15, blank=True)  # blank allowed for Google sign-in; add later in profile
     blood_group = models.CharField(max_length=3, choices=BLOOD_GROUP_CHOICES, null=True, blank=True)
     is_available = models.BooleanField(default=True)
     phone_verified = models.BooleanField(default=False)
@@ -227,6 +227,50 @@ class AdminNotification(models.Model):
         ordering = ['-created_at']
 
 
+class RequestDonorPoolAssignment(models.Model):
+    """
+    Active vs Standby pool for a blood request. Donors are ranked by distance.
+    When an active donor rejects/times out/drops, the nearest standby is promoted and standby is refilled.
+    Does not replace existing Notification/DonorResponse flow; works alongside it.
+    """
+    POOL_TYPE_ACTIVE = 'ACTIVE'
+    POOL_TYPE_STANDBY = 'STANDBY'
+    POOL_TYPE_CHOICES = [
+        (POOL_TYPE_ACTIVE, 'Active'),
+        (POOL_TYPE_STANDBY, 'Standby'),
+    ]
+    STATE_PENDING = 'PENDING'
+    STATE_ACCEPTED = 'ACCEPTED'
+    STATE_REJECTED = 'REJECTED'
+    STATE_TIMEOUT = 'TIMEOUT'
+    STATE_DROPPED = 'DROPPED'
+    STATE_CHOICES = [
+        (STATE_PENDING, 'Pending'),
+        (STATE_ACCEPTED, 'Accepted'),
+        (STATE_REJECTED, 'Rejected'),
+        (STATE_TIMEOUT, 'Timeout'),
+        (STATE_DROPPED, 'Dropped'),
+    ]
+    id = models.AutoField(primary_key=True)
+    request = models.ForeignKey(BloodRequest, on_delete=models.CASCADE, related_name='pool_assignments', db_column='request_id')
+    donor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pool_assignments')
+    distance_km = models.FloatField(null=True, blank=True, help_text='Distance at assignment time')
+    pool_type = models.CharField(max_length=10, choices=POOL_TYPE_CHOICES, default=POOL_TYPE_ACTIVE)
+    state = models.CharField(max_length=10, choices=STATE_CHOICES, default=STATE_PENDING)
+    rank = models.PositiveIntegerField(default=0, help_text='Order by distance; lower = closer')
+    notified_at = models.DateTimeField(null=True, blank=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['rank', 'id']
+        unique_together = (('request', 'donor'),)
+        verbose_name = 'Request donor pool assignment'
+
+    def __str__(self):
+        return f"Request #{self.request_id} {self.pool_type} donor {self.donor.username} ({self.state})"
+
+
 class DonorOTP(models.Model):
     """OTP for donor mobile verification (one per phone, overwritten on resend)."""
     phone = models.CharField(max_length=15, unique=True)
@@ -248,6 +292,7 @@ class RequestTimeline(models.Model):
         ('SEARCH_STARTED', 'Search Started'),
         ('DONOR_ACCEPTED', 'Donor Accepted'),
         ('STANDBY_ACTIVATED', 'Standby Activated'),
+        ('STANDBY_PROMOTED', 'Standby Promoted'),
         ('BANK_TRIGGERED', 'Bank Triggered'),
         ('FULFILLED', 'Fulfilled'),
     ]

@@ -1,0 +1,397 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Profile - Blood450</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            min-height: 100vh;
+            background: url("{% static 'images/register.jpg' %}") center/cover no-repeat fixed;
+        }
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15,23,42,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .modal {
+            max-width: 900px;
+            width: 100%;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 24px 60px rgba(15,23,42,0.35);
+            border: 1px solid #e2e8f0;
+            padding: 20px 24px;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .modal-header h1 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #111827;
+        }
+        .modal-header span {
+            font-size: 0.8rem;
+            color: #6b7280;
+        }
+        .modal-body {
+            margin-top: 6px;
+        }
+        .info-row {
+            font-size: 0.78rem;
+            color: #4b5563;
+            margin-bottom: 10px;
+        }
+        .info-row strong {
+            color: #111827;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px 14px;
+        }
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px 14px;
+        }
+        @media (max-width: 900px) {
+            .grid-2, .grid-3 { grid-template-columns: 1fr; }
+        }
+        .form-group {
+            margin-bottom: 0;
+        }
+        .form-group label {
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 3px;
+        }
+        .form-group input[type="text"],
+        .form-group input[type="email"],
+        .form-group input[type="number"],
+        .form-group input[type="date"],
+        .form-group select {
+            width: 100%;
+            padding: 7px 10px;
+            font-size: 0.8rem;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #c0392b;
+            box-shadow: 0 0 0 2px rgba(192,57,43,0.18);
+        }
+        .help {
+            font-size: 0.65rem;
+            color: #9ca3af;
+            margin-top: 2px;
+            display: block;
+        }
+        .field-error {
+            font-size: 0.65rem;
+            color: #dc2626;
+            margin-top: 2px;
+        }
+        .alert-error {
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            font-size: 0.78rem;
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+        .checkbox-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            align-items: center;
+            margin-top: 4px;
+        }
+        .checkbox-row label {
+            font-size: 0.76rem;
+            font-weight: 500;
+            display: inline-flex;
+            gap: 6px;
+            align-items: center;
+        }
+        .radio-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            align-items: center;
+            margin-top: 2px;
+        }
+        .radio-row label {
+            font-size: 0.76rem;
+            font-weight: 500;
+            display: inline-flex;
+            gap: 6px;
+            align-items: center;
+        }
+        .modal-footer {
+            margin-top: 16px;
+            display: flex;
+            justify-content: flex-end;
+        }
+        .btn-primary {
+            min-width: 160px;
+            padding: 9px 18px;
+            font-size: 0.86rem;
+            font-weight: 600;
+            color: #fff;
+            background: linear-gradient(180deg, #c0392b 0%, #a93226 100%);
+            border-radius: 999px;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-primary:hover {
+            opacity: 0.96;
+        }
+    </style>
+</head>
+<body>
+<div class="overlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-header">
+            <h1 id="modalTitle">Complete your donor profile</h1>
+            <span>Signed in with Google: <strong>{{ google_email }}</strong></span>
+        </div>
+        <div class="modal-body">
+            <p class="info-row">
+                <strong>{{ google_name }}</strong>, we only used your Google account to verify your identity and email.
+                Please fill the details below so that we can safely match you with blood requests.
+            </p>
+
+            {% if form.non_field_errors %}
+                <div class="alert-error">
+                    {% for err in form.non_field_errors %}
+                        {{ err }}{% if not forloop.last %}<br>{% endif %}
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="{{ form.mobile.id_for_label }}">Mobile *</label>
+                        {{ form.mobile }}
+                        {% if form.mobile.errors %}
+                            <div class="field-error">{{ form.mobile.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.blood_group.id_for_label }}">Blood Group *</label>
+                        {{ form.blood_group }}
+                        {% if form.blood_group.errors %}
+                            <div class="field-error">{{ form.blood_group.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.gender.id_for_label }}">Gender</label>
+                        {{ form.gender }}
+                        {% if form.gender.errors %}
+                            <div class="field-error">{{ form.gender.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.date_of_birth.id_for_label }}">Date of Birth</label>
+                        {{ form.date_of_birth }}
+                        {% if form.date_of_birth.errors %}
+                            <div class="field-error">{{ form.date_of_birth.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.alternate_mobile.id_for_label }}">Alternate Mobile</label>
+                        {{ form.alternate_mobile }}
+                        {% if form.alternate_mobile.errors %}
+                            <div class="field-error">{{ form.alternate_mobile.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.weight_kg.id_for_label }}">Weight (kg)</label>
+                        {{ form.weight_kg }}
+                        {% if form.weight_kg.errors %}
+                            <div class="field-error">{{ form.weight_kg.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="grid-3" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="{{ form.state.id_for_label }}">State</label>
+                        {{ form.state }}
+                        {% if form.state.errors %}
+                            <div class="field-error">{{ form.state.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.city.id_for_label }}">City</label>
+                        {{ form.city }}
+                        {% if form.city.errors %}
+                            <div class="field-error">{{ form.city.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.pincode.id_for_label }}">Pincode</label>
+                        {{ form.pincode }}
+                        {% if form.pincode.errors %}
+                            <div class="field-error">{{ form.pincode.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label for="{{ form.area.id_for_label }}">Area / Locality</label>
+                        {{ form.area }}
+                        {% if form.area.errors %}
+                            <div class="field-error">{{ form.area.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="{{ form.donated_before.id_for_label }}">Donated blood before?</label>
+                        {{ form.donated_before }}
+                        {% if form.donated_before.errors %}
+                            <div class="field-error">{{ form.donated_before.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.last_donation_date.id_for_label }}">Last donation date</label>
+                        {{ form.last_donation_date }}
+                        {% if form.last_donation_date.errors %}
+                            <div class="field-error">{{ form.last_donation_date.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label>Medical conditions?</label>
+                        {{ form.medical_conditions }}
+                        {% if form.medical_conditions.errors %}
+                            <div class="field-error">{{ form.medical_conditions.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label>Currently healthy?</label>
+                        {{ form.currently_healthy }}
+                        {% if form.currently_healthy.errors %}
+                            <div class="field-error">{{ form.currently_healthy.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label>Available for emergency donation? *</label>
+                        {{ form.emergency_available }}
+                        {% if form.emergency_available.errors %}
+                            <div class="field-error">{{ form.emergency_available.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.preferred_contact.id_for_label }}">Preferred contact</label>
+                        {{ form.preferred_contact }}
+                        {% if form.preferred_contact.errors %}
+                            <div class="field-error">{{ form.preferred_contact.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="{{ form.preferred_language.id_for_label }}">Preferred language</label>
+                        {{ form.preferred_language }}
+                        {% if form.preferred_language.errors %}
+                            <div class="field-error">{{ form.preferred_language.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.preferred_contact_time.id_for_label }}">Preferred contact time</label>
+                        {{ form.preferred_contact_time }}
+                        {% if form.preferred_contact_time.errors %}
+                            <div class="field-error">{{ form.preferred_contact_time.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="{{ form.occupation.id_for_label }}">Occupation</label>
+                        {{ form.occupation }}
+                        {% if form.occupation.errors %}
+                            <div class="field-error">{{ form.occupation.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.profile_photo.id_for_label }}">Profile Photo</label>
+                        {{ form.profile_photo }}
+                        {% if form.profile_photo.errors %}
+                            <div class="field-error">{{ form.profile_photo.errors.0 }}</div>
+                        {% endif %}
+                        <span class="help">Optional. JPG, PNG, etc.</span>
+                    </div>
+                </div>
+
+                <div class="grid-2" style="margin-top: 12px;">
+                    <div class="form-group">
+                        <label for="{{ form.emergency_contact_name.id_for_label }}">Emergency contact name</label>
+                        {{ form.emergency_contact_name }}
+                        {% if form.emergency_contact_name.errors %}
+                            <div class="field-error">{{ form.emergency_contact_name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        <label for="{{ form.emergency_contact_number.id_for_label }}">Emergency contact number</label>
+                        {{ form.emergency_contact_number }}
+                        {% if form.emergency_contact_number.errors %}
+                            <div class="field-error">{{ form.emergency_contact_number.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 12px;">
+                    <div class="checkbox-row">
+                        <label for="{{ form.consent_contact.id_for_label }}">
+                            {{ form.consent_contact }} I agree to be contacted for blood donation requests
+                        </label>
+                    </div>
+                    {% if form.consent_contact.errors %}
+                        <div class="field-error">{{ form.consent_contact.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group" style="margin-top: 8px;">
+                    <div class="checkbox-row">
+                        <label for="{{ form.consent_terms.id_for_label }}">
+                            {{ form.consent_terms }} I accept Terms &amp; Privacy Policy
+                        </label>
+                    </div>
+                    {% if form.consent_terms.errors %}
+                        <div class="field-error">{{ form.consent_terms.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="modal-footer">
+                    <button type="submit" class="btn-primary">Save &amp; go to dashboard</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+</body>
+</html>
+

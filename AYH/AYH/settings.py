@@ -7,18 +7,56 @@ from pathlib import Path
 import os
 from datetime import timedelta
 
-try:
-    from decouple import config
-except ImportError:
-    def config(key, default=None, cast=None):
-        val = os.environ.get(key, default)
-        if val is None:
-            return None
-        if cast is bool:
-            return str(val).lower() in ("1", "true", "yes", "on")
-        return val
-
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+def _load_dotenv_if_present():
+    """
+    Lightweight .env loader for local development.
+    We only set keys that are not already in os.environ.
+    """
+    env_path = BASE_DIR / ".env"
+    if not env_path.exists():
+        return
+    try:
+        raw = env_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raw = env_path.read_text(encoding="utf-8-sig")
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s.lower().startswith("export "):
+            s = s[7:].lstrip()
+        if "=" not in s:
+            continue
+        key, value = s.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'").strip('"')
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv_if_present()
+
+def _make_config():
+    try:
+        from decouple import Config, RepositoryEnv
+        _env_path = BASE_DIR / ".env"
+        if _env_path.exists():
+            return Config(repository=RepositoryEnv(str(_env_path)))
+        from decouple import config as _c
+        return _c
+    except ImportError:
+        def config(key, default=None, cast=None):
+            val = os.environ.get(key, default)
+            if val is None:
+                return None
+            if cast is bool:
+                return str(val).lower() in ("1", "true", "yes", "on")
+            return val
+        return config
+
+config = _make_config()
 
 # ==============================================================================
 # SECURITY
@@ -297,6 +335,34 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
 ]
+
+# ==============================================================================
+# CACHE (for OTP and similar)
+# ==============================================================================
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
+
+# OTP SMS (registration) – set in .env to send real OTP to mobile
+# Options: "console" (log only), "twilio", "twilio_verify" (use Service SID, no from number), "msg91", "fast2sms"
+OTP_SMS_BACKEND = config("OTP_SMS_BACKEND", default="console")
+# Fast2SMS (India): get API key from https://www.fast2sms.com/
+FAST2SMS_API_KEY = config("FAST2SMS_API_KEY", default=None)
+# Twilio (global): for "twilio" use FROM_NUMBER; for "twilio_verify" use VERIFY_SERVICE_SID only
+TWILIO_ACCOUNT_SID = config("TWILIO_ACCOUNT_SID", default=None)
+TWILIO_AUTH_TOKEN = config("TWILIO_AUTH_TOKEN", default=None)
+TWILIO_FROM_NUMBER = config("TWILIO_FROM_NUMBER", default=None)
+TWILIO_VERIFY_SERVICE_SID = config("TWILIO_VERIFY_SERVICE_SID", default=None)
+# MSG91 (India): MSG91_AUTH_KEY, optional MSG91_OTP_TEMPLATE_ID
+MSG91_AUTH_KEY = config("MSG91_AUTH_KEY", default=None)
+MSG91_OTP_TEMPLATE_ID = config("MSG91_OTP_TEMPLATE_ID", default=None)
+
+# Google Sign-In (donor registration) – create credentials at https://console.cloud.google.com/apis/credentials
+GOOGLE_OAUTH_CLIENT_ID = config("GOOGLE_OAUTH_CLIENT_ID", default=None)
+GOOGLE_OAUTH_CLIENT_SECRET = config("GOOGLE_OAUTH_CLIENT_SECRET", default=None)
 
 # ==============================================================================
 # BLOOD REQUEST LOCATION

@@ -708,37 +708,17 @@
                 </div>
             </div>
         </div>
-        <!-- Col 2: Set my location -->
-        {% if has_profile %}
+        <!-- Col 2: Location saved at registration; no fetch button on dashboard -->
+        {% if has_profile and donor_profile.last_lat and donor_profile.last_lng %}
         <div class="donor-card">
             <div class="donor-card-header">
                 <span style="font-size: 20px;">📍</span>
-                <h3>Set my location</h3>
+                <h3>Your location</h3>
             </div>
-            <p style="font-size: 13px; color: #6b7280; margin-bottom: 10px;">
-                Set your location to get matched for blood requests near you. Use browser location or enter coordinates.
-            </p>
-            {% if donor_profile.last_lat and donor_profile.last_lng %}
             <p class="location-ok">
-                ✓ Last set: {{ donor_profile.last_lat }}, {{ donor_profile.last_lng }}{% if donor_profile.location_updated_at %} ({{ donor_profile.location_updated_at|date:"M d, H:i" }}){% endif %}
+                ✓ Saved: {{ donor_profile.last_lat }}, {{ donor_profile.last_lng }}{% if donor_profile.location_updated_at %} ({{ donor_profile.location_updated_at|date:"M d, H:i" }}){% endif %}
             </p>
-            {% endif %}
-            <form id="locationForm">
-                {% csrf_token %}
-                <div class="location-form-row">
-                    <div>
-                        <label for="latInput">Latitude</label>
-                        <input type="text" id="latInput" name="lat" value="{% if donor_profile.last_lat %}{{ donor_profile.last_lat }}{% endif %}" placeholder="e.g. 17.4842">
-                    </div>
-                    <div>
-                        <label for="lngInput">Longitude</label>
-                        <input type="text" id="lngInput" name="lng" value="{% if donor_profile.last_lng %}{{ donor_profile.last_lng }}{% endif %}" placeholder="e.g. 78.3894">
-                    </div>
-                    <button type="button" id="useBrowserLocationBtn" class="btn-location browser">📍 Use browser location</button>
-                    <button type="submit" id="saveLocationBtn" class="btn-location save">Save location</button>
-                </div>
-            </form>
-            <p id="locationMessage" style="font-size: 13px; margin-top: 10px; display: none;"></p>
+            <p style="font-size: 12px; color: #6b7280; margin: 0;">Location was set during registration. You are matched for requests near you.</p>
         </div>
         {% endif %}
     </div>

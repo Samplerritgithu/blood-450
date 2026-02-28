@@ -72,7 +72,7 @@ class DonorLoginForm(AuthenticationForm):
 class DonorRegistrationForm(forms.Form):
     """Registration form for donors."""
     username = forms.CharField(max_length=150, label='Username', widget=forms.TextInput(attrs={'placeholder': 'Choose a username (you will use this to log in)', 'autocomplete': 'username'}))
-    mobile = forms.CharField(max_length=15, label='Mobile Number', widget=forms.TextInput(attrs={'placeholder': '10-digit mobile number'}))
+    mobile = forms.CharField(max_length=15, label='Mobile Number', widget=forms.TextInput(attrs={'placeholder': 'e.g. 9618394701 or +919618394701'}))
     password = forms.CharField(label='Password', widget=forms.PasswordInput(attrs={'placeholder': 'Create password'}), min_length=8)
     confirm_password = forms.CharField(label='Confirm Password', widget=forms.PasswordInput(attrs={'placeholder': 'Confirm password'}))
 
@@ -120,15 +120,24 @@ class DonorRegistrationForm(forms.Form):
         return self.cleaned_data['confirm_password']
 
     def clean_mobile(self):
-        """Required donor mobile number."""
-        mobile = (self.cleaned_data.get('mobile') or '').strip()
+        """Required donor mobile number. Accepts 10-digit or with country code (e.g. +919618394701)."""
+        mobile = (self.cleaned_data.get('mobile') or '').strip().replace(' ', '')
         if not mobile:
             raise ValidationError('Mobile number is required.')
-        if not mobile.isdigit() or len(mobile) < 10:
-            raise ValidationError('Enter a valid 10-digit mobile number.')
-        if User.objects.filter(donor_profile__phone=mobile).exists():
+        digits = ''.join(c for c in mobile if c.isdigit())
+        if len(digits) < 10:
+            raise ValidationError('Enter a valid mobile number (at least 10 digits).')
+        # Normalize for storage: use digits only (e.g. 919618394701 or 9618394701)
+        normalized = digits
+        if len(digits) == 12 and digits.startswith('91'):
+            normalized = digits[2:]  # store as 10-digit for consistency with Indian numbers
+        elif len(digits) > 12:
+            normalized = digits[-10:] if digits.startswith('91') else digits
+        if User.objects.filter(donor_profile__phone=normalized).exists():
             raise ValidationError('This mobile number is already registered.')
-        return mobile
+        if User.objects.filter(donor_profile__phone=digits).exists():
+            raise ValidationError('This mobile number is already registered.')
+        return normalized
 
     def clean_username(self):
         raw = self.cleaned_data.get('username', '').strip()
@@ -165,3 +174,182 @@ class DonorRegistrationForm(forms.Form):
         if not val or val == '':
             return None
         return val == 'yes'
+
+
+class GoogleProfileCompletionForm(forms.Form):
+    """
+    Profile completion form shown after Google sign-in.
+    Reuses most fields from DonorRegistrationForm except username/password,
+    and adds blood_group so matching can work.
+    """
+    mobile = forms.CharField(
+        max_length=15,
+        label='Mobile Number',
+        widget=forms.TextInput(attrs={'placeholder': 'e.g. 9618394701 or +919618394701'})
+    )
+
+    GENDER_CHOICES = DonorRegistrationForm.GENDER_CHOICES
+    gender = forms.ChoiceField(choices=GENDER_CHOICES, required=False, label='Gender')
+
+    date_of_birth = forms.DateField(
+        required=False,
+        label='Date of Birth',
+        widget=forms.DateInput(attrs={'type': 'date'})
+    )
+
+    alternate_mobile = forms.CharField(
+        max_length=15,
+        required=False,
+        label='Alternate Mobile',
+        widget=forms.TextInput(attrs={'placeholder': '10-digit'})
+    )
+    preferred_language = forms.ChoiceField(
+        choices=[('', '-- Select --'), ('english', 'English'), ('hindi', 'Hindi'), ('odia', 'Odia')],
+        required=False,
+        label='Preferred Language'
+    )
+    preferred_contact_time = forms.ChoiceField(
+        choices=[('', '-- Select --'), ('morning', 'Morning'), ('afternoon', 'Afternoon'), ('evening', 'Evening'), ('any', 'Any')],
+        required=False,
+        label='Preferred Contact Time'
+    )
+    occupation = forms.CharField(
+        max_length=100,
+        required=False,
+        label='Occupation',
+        widget=forms.TextInput(attrs={'placeholder': 'e.g. Engineer, Student'})
+    )
+    emergency_contact_name = forms.CharField(
+        max_length=100,
+        required=False,
+        label='Emergency Contact Name',
+        widget=forms.TextInput(attrs={'placeholder': 'Name'})
+    )
+    emergency_contact_number = forms.CharField(
+        max_length=15,
+        required=False,
+        label='Emergency Contact Number',
+        widget=forms.TextInput(attrs={'placeholder': '10-digit'})
+    )
+    profile_photo = forms.ImageField(
+        required=False,
+        label='Profile Photo',
+        widget=forms.FileInput(attrs={'accept': 'image/*'})
+    )
+
+    state = forms.CharField(
+        max_length=100,
+        required=False,
+        label='State',
+        widget=forms.TextInput(attrs={'placeholder': 'State'})
+    )
+    city = forms.CharField(
+        max_length=100,
+        required=False,
+        label='City',
+        widget=forms.TextInput(attrs={'placeholder': 'City'})
+    )
+    area = forms.CharField(
+        max_length=200,
+        required=False,
+        label='Area / Locality',
+        widget=forms.TextInput(attrs={'placeholder': 'Area or locality'})
+    )
+    pincode = forms.CharField(
+        max_length=10,
+        required=False,
+        label='Pincode',
+        widget=forms.TextInput(attrs={'placeholder': 'Pincode'})
+    )
+
+    weight_kg = forms.FloatField(
+        required=False,
+        label='Weight (kg)',
+        widget=forms.NumberInput(attrs={'placeholder': 'Optional', 'step': '0.1', 'min': '0'})
+    )
+
+    donated_before = forms.ChoiceField(
+        choices=[('', '-- Select --'), ('yes', 'Yes'), ('no', 'No')],
+        required=False,
+        label='Have you donated blood before?'
+    )
+    last_donation_date = forms.DateField(
+        required=False,
+        label='Last Donation Date',
+        widget=forms.DateInput(attrs={'type': 'date'})
+    )
+
+    medical_conditions = forms.ChoiceField(
+        choices=[('', '-- Select --'), ('yes', 'Yes'), ('no', 'No')],
+        required=False,
+        label='Any major medical conditions?'
+    )
+    currently_healthy = forms.ChoiceField(
+        choices=[('', '-- Select --'), ('yes', 'Yes'), ('no', 'No')],
+        required=False,
+        label='Are you currently healthy?'
+    )
+
+    emergency_available = forms.ChoiceField(
+        choices=[('yes', 'Yes'), ('no', 'No')],
+        required=True,
+        label='Available for Emergency Donation?'
+    )
+    preferred_contact = forms.ChoiceField(
+        choices=UserProfile.CONTACT_METHOD_CHOICES,
+        label='Preferred Contact Method',
+        initial='call'
+    )
+
+    consent_contact = forms.BooleanField(
+        required=True,
+        label='I agree to be contacted for blood donation requests'
+    )
+    consent_terms = forms.BooleanField(
+        required=True,
+        label='I accept Terms & Privacy Policy'
+    )
+
+    blood_group = forms.ChoiceField(
+        choices=[('', '-- Select --')] + list(DonorProfile.BLOOD_GROUP_CHOICES),
+        required=True,
+        label='Blood Group'
+    )
+
+    def clean_mobile(self):
+        """Required donor mobile number. Accepts 10-digit or with country code (e.g. +919618394701)."""
+        mobile = (self.cleaned_data.get('mobile') or '').strip().replace(' ', '')
+        if not mobile:
+            raise ValidationError('Mobile number is required.')
+        digits = ''.join(c for c in mobile if c.isdigit())
+        if len(digits) < 10:
+            raise ValidationError('Enter a valid mobile number (at least 10 digits).')
+        # Normalize for storage: use digits only (e.g. 919618394701 or 9618394701)
+        normalized = digits
+        if len(digits) == 12 and digits.startswith('91'):
+            normalized = digits[2:]  # store as 10-digit for consistency with Indian numbers
+        elif len(digits) > 12:
+            normalized = digits[-10:] if digits.startswith('91') else digits
+        if User.objects.filter(donor_profile__phone=normalized).exists():
+            raise ValidationError('This mobile number is already registered.')
+        if User.objects.filter(donor_profile__phone=digits).exists():
+            raise ValidationError('This mobile number is already registered.')
+        return normalized
+
+    def clean_alternate_mobile(self):
+        val = (self.cleaned_data.get('alternate_mobile') or '').strip()
+        if not val:
+            return ''
+        digits = ''.join(c for c in val if c.isdigit())
+        if len(digits) != 10:
+            raise ValidationError('Enter a valid 10-digit number.')
+        return digits
+
+    def clean_emergency_contact_number(self):
+        val = (self.cleaned_data.get('emergency_contact_number') or '').strip()
+        if not val:
+            return ''
+        digits = ''.join(c for c in val if c.isdigit())
+        if len(digits) != 10:
+            raise ValidationError('Enter a valid 10-digit number.')
+        return digits

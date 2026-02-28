@@ -14,9 +14,16 @@ dj-database-url==2.2.0
 
 # Additional utilities
 python-decouple==3.8  # For environment variables
+requests>=2.28.0  # Google OAuth token exchange
 Pillow==10.1.0  # For image handling (if needed later)
 twilio>=8.0.0  # Optional: for sending OTP SMS (set TWILIO_* in settings/env)
 
 # Production server (optional)
 gunicorn==21.2.0
 whitenoise==6.6.0  # Static files serving
+
+# Excel analytics / Power BI-style dashboard
+pandas>=2.0.0
+openpyxl>=3.1.0
+xlrd>=2.0.0
+plotly>=5.18.0

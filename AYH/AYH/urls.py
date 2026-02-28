@@ -33,9 +33,9 @@ urlpatterns = [
     # REST API Endpoints (for Flutter)
     path('api/', include('careapp.api_urls')),
     
-    # Web Interface (Django Templates) - Keep existing
-    path('', RedirectView.as_view(url='/accounts/login/', permanent=False), name='home'),
+    # Web Interface (Django Templates) - careapp first so /register/google/ etc. are not caught by home redirect
     path('', include('careapp.urls')),
+    path('', RedirectView.as_view(url='/accounts/login/', permanent=False), name='home'),
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -30,7 +30,8 @@ urlpatterns = [
     # DONOR RESPONSE ENDPOINT
     # ==============================================================================
     path('respond/', api_views.respond_to_request, name='api-respond'),
-    
+    path('requests/<int:request_id>/donor-pools/', api_views.request_donor_pools, name='api-request-donor-pools'),
+
     # ==============================================================================
     # DASHBOARD ENDPOINT
     # ==============================================================================

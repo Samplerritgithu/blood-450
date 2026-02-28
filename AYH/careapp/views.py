@@ -1,7 +1,10 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth import login
 from django.contrib.auth.models import User
 from django.contrib import messages
+from django.utils.crypto import get_random_string
+from urllib.parse import urlencode
 from django.http import JsonResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
@@ -13,15 +16,22 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from datetime import timedelta
 from django.conf import settings as django_settings
+from decimal import Decimal
 import json
 import logging
+import os
+import random
+import uuid
+from datetime import timedelta
 
 from django.contrib.auth.views import LoginView
 
+from .excel_analytics import read_excel_to_dataframe, build_charts_and_summary
 from .models import (
     BloodRequest, DonorProfile, UserProfile, Notification, DonorResponse,
     AdminNotification, RequestTimeline, EtaTracking, DelayReason, DonorAssignment, FallbackAction,
     RadiusExpansionLog, BloodBankMaster, HospitalMaster, HospitalMetrics, DimCity,
+    RequestDonorPoolAssignment, DonorOTP,
 )
 from .forms import DonorRegistrationForm, DonorLoginForm
 from .utils import haversine_km, donor_has_location
@@ -35,6 +45,11 @@ class DonorLoginView(LoginView):
     form_class = DonorLoginForm
     template_name = 'registration/login.html'
     redirect_authenticated_user = True
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['google_oauth_configured'] = bool(getattr(django_settings, 'GOOGLE_OAUTH_CLIENT_ID', None))
+        return context
 
 
 # Blood compatibility matrix - who can donate to whom
@@ -172,11 +187,12 @@ def admin_dashboard(request):
         'data': [donor_bg_map.get(bg, 0) for bg in all_bgs],
     }
     
-    # If just created a request, show summary for modal (notified / accepted donors)
+    # If just created a request, show summary for modal (notified donors with name, blood group, phone, status)
     created_request_id = request.GET.get('created_request_id')
     created_notified_count = None
     created_accepted_count = None
     created_accepted_list = []
+    created_notified_list = []
     created_request_obj = None
     if created_request_id:
         try:
@@ -191,6 +207,27 @@ def admin_dashboard(request):
                 {'username': r.donor.username, 'blood_group': getattr(r.donor.donor_profile, 'blood_group', None)}
                 for r in accepted
             ]
+            response_by_donor = dict(
+                DonorResponse.objects.filter(blood_request=created_request_obj).values_list('donor_id', 'response')
+            )
+            for notif in Notification.objects.filter(blood_request=created_request_obj).select_related('user', 'user__donor_profile'):
+                status_key = response_by_donor.get(notif.user_id)
+                status_display = 'Accepted' if status_key == 'accepted' else ('Declined' if status_key == 'rejected' else 'Pending')
+                try:
+                    profile = notif.user.donor_profile
+                    blood_grp = getattr(profile, 'blood_group', None)
+                    phone = getattr(profile, 'phone', None) or '—'
+                except (DonorProfile.DoesNotExist, AttributeError):
+                    blood_grp = None
+                    phone = '—'
+                created_notified_list.append({
+                    'donor_id': notif.user_id,
+                    'username': notif.user.username,
+                    'blood_group': blood_grp,
+                    'phone': phone,
+                    'status': status_display,
+                    'status_key': status_key or 'pending',
+                })
         except (BloodRequest.DoesNotExist, ValueError):
             created_request_id = None
 
@@ -220,6 +257,7 @@ def admin_dashboard(request):
         'created_notified_count': created_notified_count,
         'created_accepted_count': created_accepted_count,
         'created_accepted_list': created_accepted_list,
+        'created_notified_list': created_notified_list,
     }
     return render(request, 'admin_dashboard.html', context)
 
@@ -386,6 +424,15 @@ def admin_create_request(request):
             except Exception:
                 logger.exception("admin_create_request: notify failed for donor_id=%s", donor_profile.user_id)
                 continue
+
+        # Optional: when location-based, also populate Active/Standby pool (does not change who got notified)
+        if use_distance_matching and matched_with_distance:
+            try:
+                from .donor_pool_service import create_request_and_assign_donors
+                sorted_by_dist = sorted(matched_with_distance, key=lambda x: x[1])
+                create_request_and_assign_donors(blood_request, sorted_by_dist, haversine_km)
+            except Exception:
+                logger.exception("admin_create_request: donor pool assign failed")
 
         # Stay on dashboard: redirect with created_request_id so dashboard shows summary modal (no message – modal shows notified/accepted counts)
         url = reverse('admin_dashboard') + '?created_request_id=' + str(blood_request.id)
@@ -629,11 +676,53 @@ def admin_request_detail_modal(request, request_id):
                 )
                 dist_km = round(d, 2) if d is not None else None
         accepted_with_distance.append({'response': resp, 'distance_km': dist_km})
+    # All notified donors with name, blood group, phone, status for admin to track
+    response_by_donor = dict(
+        DonorResponse.objects.filter(blood_request=blood_request).values_list('donor_id', 'response')
+    )
+    notified_donors_list = []
+    for notif in Notification.objects.filter(blood_request=blood_request).select_related('user', 'user__donor_profile'):
+        status_key = response_by_donor.get(notif.user_id)
+        status_display = 'Accepted' if status_key == 'accepted' else ('Declined' if status_key == 'rejected' else 'Pending')
+        try:
+            profile = notif.user.donor_profile
+            blood_grp = getattr(profile, 'blood_group', None)
+            phone = getattr(profile, 'phone', None) or '—'
+        except (DonorProfile.DoesNotExist, AttributeError):
+            blood_grp = None
+            phone = '—'
+        notified_donors_list.append({
+            'donor_id': notif.user_id,
+            'username': notif.user.username,
+            'blood_group': blood_grp,
+            'phone': phone,
+            'status': status_display,
+            'status_key': status_key or 'pending',
+        })
+    active_assignments = []
+    standby_assignments = []
+    for a in RequestDonorPoolAssignment.objects.filter(
+        request=blood_request
+    ).select_related('donor', 'donor__donor_profile').order_by('rank'):
+        try:
+            phone = a.donor.donor_profile.phone if a.donor.donor_profile else '—'
+            blood_grp = a.donor.donor_profile.blood_group if a.donor.donor_profile else None
+        except Exception:
+            phone = '—'
+            blood_grp = None
+        item = {'assignment': a, 'username': a.donor.username, 'donor_id': a.donor_id, 'distance_km': a.distance_km, 'state': a.state, 'phone': phone, 'blood_group': blood_grp}
+        if a.pool_type == RequestDonorPoolAssignment.POOL_TYPE_ACTIVE:
+            active_assignments.append(item)
+        else:
+            standby_assignments.append(item)
     context = {
         'blood_request': blood_request,
         'notified_count': notified_count,
+        'notified_donors_list': notified_donors_list,
         'accepted_responses': accepted_responses,
         'accepted_with_distance': accepted_with_distance,
+        'active_assignments': active_assignments,
+        'standby_assignments': standby_assignments,
         'timeline_events': timeline_events,
         'eta_trackings': eta_trackings,
         'delay_reasons': delay_reasons,
@@ -965,6 +1054,18 @@ def donor_respond(request):
         
         blood_request = get_object_or_404(BloodRequest, id=blood_request_id)
         
+        # First accept closes the request for others; decline does not
+        if response == 'accepted':
+            already_accepted = DonorResponse.objects.filter(
+                blood_request=blood_request,
+                response='accepted'
+            ).exclude(donor=request.user).exists()
+            if already_accepted:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'This request has already been accepted by another donor. It is closed for further acceptances.'
+                }, status=400)
+
         # Create or update donor response
         donor_response, created = DonorResponse.objects.update_or_create(
             blood_request=blood_request,
@@ -977,6 +1078,13 @@ def donor_respond(request):
                 blood_request=blood_request,
                 donor=request.user,
             )
+
+        # Update Active/Standby pool state and promote standby on reject
+        try:
+            from .donor_pool_service import handle_donor_response_for_pool
+            handle_donor_response_for_pool(blood_request.id, request.user.id, response == 'accepted')
+        except Exception:
+            logger.exception("donor_respond: pool update failed")
         
         # Mark notification as read
         Notification.objects.filter(
@@ -1197,7 +1305,301 @@ def admin_resolve_delay(request, delay_uuid):
     return redirect(redirect_url)
 
 
-# ----- Donor registration (web): form -> blood group modal -> OTP -> auto login -----
+# ----- Google Sign-In (donor): OAuth2 flow -> create/link user -> redirect to donor dashboard -----
+
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
+
+def _is_profile_complete(user):
+    """
+    Check if donor profile has been manually completed after Google sign-in.
+    For now we treat profile as 'complete' when phone and blood_group are present.
+    """
+    try:
+        donor_profile = user.donor_profile
+    except DonorProfile.DoesNotExist:
+        return False
+    if not donor_profile.phone:
+        return False
+    if not donor_profile.blood_group:
+        return False
+    return True
+
+
+def google_login(request):
+    """Redirect user to Google OAuth consent screen. State is stored in session."""
+    client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
+    if not client_id:
+        messages.error(request, "Google Sign-In is not configured.")
+        return redirect("login")
+    state = get_random_string(32)
+    request.session["google_oauth_state"] = state
+    redirect_uri = request.build_absolute_uri(reverse("google_callback"))
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "offline",
+        "prompt": "select_account",
+    }
+    return redirect(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
+
+
+def google_callback(request):
+    """Handle Google OAuth callback: exchange code for token, get user info, login, redirect to donor dashboard."""
+    import requests
+
+    state = request.GET.get("state")
+    code = request.GET.get("code")
+    if not state or state != request.session.get("google_oauth_state"):
+        messages.error(request, "Invalid or expired Google sign-in. Please try again.")
+        return redirect("donor_register")
+    request.session.pop("google_oauth_state", None)
+
+    if not code:
+        messages.error(request, "Google sign-in was cancelled or failed.")
+        return redirect("donor_register")
+
+    client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
+    client_secret = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_SECRET", None)
+    if not client_id or not client_secret:
+        messages.error(request, "Google Sign-In is not configured.")
+        return redirect("donor_register")
+
+    redirect_uri = request.build_absolute_uri(reverse("google_callback"))
+    token_data = {
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    try:
+        token_resp = requests.post(
+            GOOGLE_TOKEN_URL,
+            data=token_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        token_resp.raise_for_status()
+        token_json = token_resp.json()
+        access_token = token_json.get("access_token")
+        if not access_token:
+            messages.error(request, "Google sign-in failed (no token).")
+            return redirect("donor_register")
+    except Exception as e:
+        logger.exception("Google token exchange failed: %s", e)
+        messages.error(request, "Google sign-in failed. Please try again.")
+        return redirect("donor_register")
+
+    try:
+        userinfo_resp = requests.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        userinfo_resp.raise_for_status()
+        userinfo = userinfo_resp.json()
+    except Exception as e:
+        logger.exception("Google userinfo failed: %s", e)
+        messages.error(request, "Google sign-in failed. Please try again.")
+        return redirect("donor_register")
+
+    email = (userinfo.get("email") or "").strip().lower()
+    name = (userinfo.get("name") or userinfo.get("email") or "User").strip()
+    if not email:
+        messages.error(request, "Google account did not provide an email.")
+        return redirect("donor_register")
+
+    # Find existing user by email, or create new one
+    user = User.objects.filter(email__iexact=email).first()
+    created = False
+    if not user:
+        username = email.split("@")[0].replace(".", "_")[:30]
+        base_username = username
+        n = 0
+        while User.objects.filter(username__iexact=username).exists():
+            n += 1
+            username = f"{base_username}{n}"[:30]
+        with transaction.atomic():
+            user = User.objects.create(
+                username=username,
+                email=email,
+                first_name=name[:30],
+                is_active=True,
+                is_staff=False,
+            )
+            user.set_unusable_password()
+            user.save()
+            UserProfile.objects.create(user=user)
+            DonorProfile.objects.create(user=user, phone="", phone_verified=False)
+            created = True
+    else:
+        if not hasattr(user, "donor_profile"):
+            DonorProfile.objects.create(user=user, phone="", phone_verified=False)
+        if not hasattr(user, "user_profile"):
+            UserProfile.objects.create(user=user)
+
+    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+    # After Google login, if donor profile is incomplete, ask user to fill details manually.
+    if _is_profile_complete(user):
+        return redirect("donor_notifications")
+    return redirect("google_complete_profile")
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def google_complete_profile(request):
+    """
+    After Google sign-in, collect donor profile details (phone, blood group, health, consents, etc.)
+    using a manual form similar to the regular registration page.
+    """
+    # Ensure profiles exist (google_callback already tries to create them, but guard just in case)
+    user = request.user
+    donor_profile, _ = DonorProfile.objects.get_or_create(user=user, defaults={'phone': "", 'phone_verified': False})
+    user_profile, _ = UserProfile.objects.get_or_create(user=user)
+
+    from .forms import GoogleProfileCompletionForm  # local import to avoid circulars at module import time
+
+    if request.method == "GET":
+        initial = {
+            'mobile': donor_profile.phone or "",
+            'gender': user_profile.gender or "",
+            'date_of_birth': user_profile.date_of_birth,
+            'alternate_mobile': user_profile.alternate_mobile or "",
+            'preferred_language': user_profile.preferred_language or "",
+            'preferred_contact_time': user_profile.preferred_contact_time or "",
+            'occupation': user_profile.occupation or "",
+            'emergency_contact_name': user_profile.emergency_contact_name or "",
+            'emergency_contact_number': user_profile.emergency_contact_number or "",
+            'state': user_profile.state or "",
+            'city': user_profile.city or "",
+            'area': user_profile.area or "",
+            'pincode': user_profile.pincode or "",
+            'weight_kg': user_profile.weight_kg,
+            'donated_before': 'yes' if user_profile.donated_before is True else ('no' if user_profile.donated_before is False else ''),
+            'last_donation_date': user_profile.last_donation_date,
+            'medical_conditions': 'yes' if user_profile.medical_conditions is True else ('no' if user_profile.medical_conditions is False else ''),
+            'currently_healthy': 'yes' if user_profile.currently_healthy is True else ('no' if user_profile.currently_healthy is False else ''),
+            'emergency_available': 'yes' if user_profile.emergency_available else 'no',
+            'preferred_contact': user_profile.preferred_contact or 'call',
+            'consent_contact': user_profile.consent_contact,
+            'consent_terms': user_profile.consent_terms,
+            'blood_group': donor_profile.blood_group or "",
+        }
+        form = GoogleProfileCompletionForm(initial=initial)
+        context = {
+            'form': form,
+            'google_email': user.email,
+            'google_name': user.first_name or user.username,
+        }
+        return render(request, 'registration/google_complete_profile.html', context)
+
+    # POST
+    form = GoogleProfileCompletionForm(request.POST, request.FILES)
+    if not form.is_valid():
+        context = {
+            'form': form,
+            'google_email': user.email,
+            'google_name': user.first_name or user.username,
+        }
+        return render(request, 'registration/google_complete_profile.html', context, status=400)
+
+    data = form.cleaned_data
+    # Update user profile fields
+    user_profile.gender = data.get('gender') or None
+    user_profile.date_of_birth = data.get('date_of_birth')
+    user_profile.state = data.get('state') or ''
+    user_profile.city = data.get('city') or ''
+    user_profile.area = data.get('area') or ''
+    user_profile.pincode = data.get('pincode') or ''
+    user_profile.weight_kg = data.get('weight_kg')
+
+    def _bool_choice_local(val):
+        if not val or val == '':
+            return None
+        return val.lower() == 'yes'
+
+    user_profile.donated_before = _bool_choice_local(data.get('donated_before'))
+    user_profile.last_donation_date = data.get('last_donation_date')
+    user_profile.medical_conditions = _bool_choice_local(data.get('medical_conditions'))
+    user_profile.currently_healthy = _bool_choice_local(data.get('currently_healthy'))
+    user_profile.emergency_available = _bool_choice_local(data.get('emergency_available')) if data.get('emergency_available') else True
+    user_profile.preferred_contact = data.get('preferred_contact') or 'call'
+    user_profile.consent_contact = bool(data.get('consent_contact'))
+    user_profile.consent_terms = bool(data.get('consent_terms'))
+    user_profile.alternate_mobile = data.get('alternate_mobile') or ''
+    user_profile.preferred_language = data.get('preferred_language') or ''
+    user_profile.preferred_contact_time = data.get('preferred_contact_time') or ''
+    user_profile.occupation = data.get('occupation') or ''
+    user_profile.emergency_contact_name = data.get('emergency_contact_name') or ''
+    user_profile.emergency_contact_number = data.get('emergency_contact_number') or ''
+    if data.get('profile_photo'):
+        user_profile.profile_photo = data['profile_photo']
+    user_profile.save()
+
+    # Update donor profile essentials
+    donor_profile.phone = data.get('mobile')
+    donor_profile.blood_group = data.get('blood_group') or None
+    donor_profile.save(update_fields=['phone', 'blood_group'])
+
+    return redirect('donor_notifications')
+
+
+# ----- Donor registration (web): form -> OTP verification -> blood group modal -> auto login -----
+
+OTP_EXPIRY_MINUTES = 15
+
+
+def _normalize_phone_for_sms(phone):
+    """Normalize phone for SMS: Indian 10-digit -> keep as-is for Fast2SMS; add +91 for Twilio (in otp_service)."""
+    p = (phone or '').strip().replace(' ', '').replace('-', '')
+    if len(p) == 10 and p.isdigit() and p[0] in '6789':
+        return p  # 10-digit Indian: Fast2SMS uses as-is; otp_service will add +91 for Twilio
+    if p.startswith('+91') and len(p) == 13 and p[3:].isdigit():
+        return p[3:]  # +919618394701 -> 9618394701
+    if p.startswith('91') and len(p) == 12 and p[2:].isdigit():
+        return p[2:]
+    return p
+
+
+def _send_otp_to_phone(phone):
+    """Generate 6-digit OTP (or use Twilio Verify), save to DonorOTP, and send via SMS. Returns OTP code or sentinel."""
+    phone_clean = (phone or '').strip()
+    backend = getattr(django_settings, 'OTP_SMS_BACKEND', 'console')
+    logger.info('OTP send: backend=%s, phone=%s', backend, phone_clean)
+
+    if backend == 'twilio_verify':
+        # Twilio Verify sends its own OTP; we store a sentinel and verify via API later
+        try:
+            from .otp_service import send_otp_sms
+            send_phone = _normalize_phone_for_sms(phone_clean)
+            send_otp_sms(send_phone, None)
+        except Exception as e:
+            logger.warning('Twilio Verify send failed: %s', e)
+        DonorOTP.objects.update_or_create(
+            phone=phone_clean,
+            defaults={'otp_code': 'TWILIO_VERIFY'}
+        )
+        return 'TWILIO_VERIFY'
+    # Default: generate OTP, store, send via fast2sms/twilio/msg91/console
+    code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+    DonorOTP.objects.update_or_create(
+        phone=phone_clean,
+        defaults={'otp_code': code}
+    )
+    try:
+        from .otp_service import send_otp_sms
+        send_phone = _normalize_phone_for_sms(phone_clean)
+        send_otp_sms(send_phone, code)
+    except Exception as e:
+        logger.warning('OTP SMS send failed: %s', e)
+    return code
+
 
 def _bool_choice(val):
     if not val or val == '':
@@ -1212,7 +1614,12 @@ def donor_register(request):
         form = DonorRegistrationForm()
         err = request.GET.get('err')
         err_message = {'session_expired': 'Session expired. Please complete registration again.', 'invalid_blood_group': 'Invalid blood group. Please try again.'}.get(err, '')
-        return render(request, 'registration/register.html', {'form': form, 'register_error': err_message})
+        google_oauth_configured = bool(getattr(django_settings, 'GOOGLE_OAUTH_CLIENT_ID', None))
+        return render(request, 'registration/register.html', {
+            'form': form,
+            'register_error': err_message,
+            'google_oauth_configured': google_oauth_configured,
+        })
     # POST (include FILES for profile_photo)
     form = DonorRegistrationForm(request.POST, request.FILES)
     if not form.is_valid():
@@ -1254,24 +1661,92 @@ def donor_register(request):
             emergency_contact_number=data.get('emergency_contact_number') or '',
             profile_photo=data.get('profile_photo'),
         )
+        last_lat = request.POST.get('last_lat')
+        last_lng = request.POST.get('last_lng')
+        try:
+            last_lat = Decimal(str(last_lat).strip()) if last_lat and str(last_lat).strip() else None
+            last_lng = Decimal(str(last_lng).strip()) if last_lng and str(last_lng).strip() else None
+        except Exception:
+            last_lat = last_lng = None
         DonorProfile.objects.create(
             user=user,
             phone=mobile,
             blood_group=None,
             phone_verified=False,
+            last_lat=last_lat,
+            last_lng=last_lng,
+            location_updated_at=timezone.now() if (last_lat and last_lng) else None,
         )
     request.session['pending_verification_user_id'] = user.pk
     request.session['pending_verification_phone'] = mobile
+    _send_otp_to_phone(mobile)
     return JsonResponse({
         'success': True,
+        'step': 'otp',
         'role': 'donor',
-        'message': 'Please complete the steps: Blood Donation info → Thank you → Choose blood group.',
+        'message': 'OTP sent to your registered mobile number. Enter it below to verify.',
     })
 
 
 @require_http_methods(["POST"])
+def donor_verify_otp(request):
+    """Verify OTP sent to registered mobile; on success set phone_verified=True and return step blood_group."""
+    user_id = request.session.get('pending_verification_user_id')
+    phone = request.session.get('pending_verification_phone')
+    if not user_id or not phone:
+        return JsonResponse({'success': False, 'message': 'Session expired. Please complete registration again.'}, status=400)
+    if request.content_type and 'application/json' in request.content_type and request.body:
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            data = {}
+    else:
+        data = request.POST
+    otp_entered = (data.get('otp') or '').strip()
+    if not otp_entered:
+        return JsonResponse({'success': False, 'message': 'Please enter the OTP.'}, status=400)
+    try:
+        donor_otp = DonorOTP.objects.get(phone=phone)
+    except DonorOTP.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Invalid or expired OTP. Request a new one.'}, status=400)
+    from datetime import timedelta
+    if timezone.now() - donor_otp.created_at > timedelta(minutes=OTP_EXPIRY_MINUTES):
+        return JsonResponse({'success': False, 'message': 'OTP expired. Please request a new one.'}, status=400)
+
+    # Twilio Verify: check via API instead of comparing to stored code
+    if donor_otp.otp_code == 'TWILIO_VERIFY':
+        from .otp_service import check_otp_twilio_verify
+        ok, err_msg = check_otp_twilio_verify(phone, otp_entered)
+        if not ok:
+            return JsonResponse({'success': False, 'message': err_msg or 'Invalid OTP.'}, status=400)
+    elif donor_otp.otp_code != otp_entered:
+        return JsonResponse({'success': False, 'message': 'Invalid OTP. Please try again.'}, status=400)
+
+    user = get_object_or_404(User, pk=user_id)
+    profile = get_object_or_404(DonorProfile, user=user)
+    profile.phone_verified = True
+    profile.save(update_fields=['phone_verified'])
+    donor_otp.delete()
+    return JsonResponse({
+        'success': True,
+        'step': 'blood_group',
+        'message': 'Mobile verified. Please select your blood group.',
+    })
+
+
+@require_http_methods(["POST"])
+def donor_resend_otp(request):
+    """Resend OTP to pending_verification_phone."""
+    phone = request.session.get('pending_verification_phone')
+    if not phone:
+        return JsonResponse({'success': False, 'message': 'Session expired.'}, status=400)
+    _send_otp_to_phone(phone)
+    return JsonResponse({'success': True, 'message': 'OTP sent again to your mobile.'})
+
+
+@require_http_methods(["POST"])
 def donor_register_select_blood_group(request):
-    """Step 2: Save blood group, then redirect to login so user signs in and gets a proper session."""
+    """Step 3: Save blood group, then redirect to login so user signs in and gets a proper session."""
     user_id = request.session.get('pending_verification_user_id')
     if not user_id:
         return HttpResponseRedirect('/register/?err=session_expired')
@@ -1293,3 +1768,149 @@ def donor_register_select_blood_group(request):
     request.session.pop('pending_verification_phone', None)
     # Redirect to login with next=/notifications/ so user signs in and is then redirected to dashboard
     return HttpResponseRedirect('/accounts/login/?next=/notifications/&registered=1')
+
+
+# ---------------------------------------------------------------------------
+# Excel Analytics (Power BI-style dashboard)
+# ---------------------------------------------------------------------------
+
+def _excel_upload_dir():
+    """Directory for temporary Excel uploads (per-session)."""
+    d = os.path.join(django_settings.MEDIA_ROOT, 'excel_uploads')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+@login_required
+@user_passes_test(is_staff_user)
+@require_http_methods(["GET", "POST"])
+def excel_analytics_upload(request):
+    """Upload Excel file; save to disk and redirect to dashboard. GET redirects to live dashboard (default)."""
+    if request.method == 'GET':
+        return redirect('excel_analytics_live')
+    file = request.FILES.get('excel_file')
+    if not file:
+        messages.error(request, 'Please select an Excel file (.xlsx or .xls).')
+        return redirect('excel_analytics_upload')
+    name = (file.name or '').strip().lower()
+    if not name.endswith(('.xlsx', '.xls')):
+        messages.error(request, 'Only .xlsx and .xls files are allowed.')
+        return redirect('excel_analytics_upload')
+    upload_dir = _excel_upload_dir()
+    ext = '.xlsx' if name.endswith('.xlsx') else '.xls'
+    safe_name = f"{uuid.uuid4().hex}{ext}"
+    path = os.path.join(upload_dir, safe_name)
+    try:
+        with open(path, 'wb') as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+        request.session['excel_analytics_path'] = path
+        messages.success(request, 'File uploaded. View your analytics dashboard below.')
+        return redirect('excel_analytics_dashboard')
+    except Exception as e:
+        logger.exception('Excel upload failed')
+        messages.error(request, f'Upload failed: {e}')
+        return redirect('excel_analytics_upload')
+
+
+@login_required
+@user_passes_test(is_staff_user)
+@require_http_methods(["GET"])
+def excel_analytics_dashboard(request):
+    """Power BI-style dashboard: charts and summary from last uploaded Excel."""
+    path = request.session.get('excel_analytics_path')
+    if not path or not os.path.isfile(path):
+        messages.info(request, 'Upload an Excel file to see analytics and charts.')
+        return redirect('excel_analytics_upload')
+    try:
+        df = read_excel_to_dataframe(path)
+        if df.empty:
+            messages.warning(request, 'The uploaded file has no data in the first sheet.')
+            return redirect('excel_analytics_upload')
+        result = build_charts_and_summary(df)
+    except Exception as e:
+        logger.exception('Excel dashboard failed')
+        messages.error(request, f'Could not read file: {e}')
+        return redirect('excel_analytics_upload')
+    context = {
+        'charts': result.get('charts', []),
+        'summary_table': result.get('summary_table', []),
+        'row_count': result.get('row_count', 0),
+        'column_count': result.get('column_count', 0),
+        'error': result.get('error'),
+        'sheet_name': (getattr(df.columns, 'name', None) or 'Sheet1') if hasattr(df, 'columns') else 'Sheet1',
+        'data_source': 'upload',
+    }
+    return render(request, 'excel_analytics_dashboard.html', context)
+
+
+@login_required
+@user_passes_test(is_staff_user)
+@require_http_methods(["GET"])
+def excel_analytics_live(request):
+    """Power BI-style dashboard with data from backend (BloodRequest + DonorProfile). No file upload."""
+    import pandas as pd
+    from django.utils import timezone
+
+    # Build DataFrame from Django models (same shape as export)
+    requests_qs = BloodRequest.objects.all().order_by('-created_at')[:5000]
+    if requests_qs.exists():
+        rows = []
+        for r in requests_qs:
+            rows.append({
+                'request_id': str(r.request_id) if r.request_id else '',
+                'created_at': r.created_at.date() if r.created_at else None,
+                'blood_group': r.blood_group or '',
+                'urgency': r.urgency or '',
+                'status': r.status or '',
+                'city': r.city or '',
+                'state': r.state or '',
+                'source': r.source or '',
+                'units_needed': r.units_needed,
+                'patient_age': r.patient_age,
+                'sla_minutes': r.sla_minutes,
+                'closure_type': r.closure_type or '',
+                'closure_reason': r.closure_reason or '',
+            })
+        df = pd.DataFrame(rows)
+    else:
+        # Sample data from model choices so charts always render
+        blood_groups = [c[0] for c in BloodRequest.BLOOD_GROUP_CHOICES]
+        urgencies = [c[0] for c in BloodRequest.URGENCY_CHOICES]
+        statuses = [c[0] for c in BloodRequest.STATUS_CHOICES]
+        sources = [c[0] for c in BloodRequest.SOURCE_CHOICES]
+        closure_types = [c[0] for c in BloodRequest.CLOSURE_TYPE_CHOICES]
+        closure_reasons = [c[0] for c in BloodRequest.CLOSURE_REASON_CHOICES]
+        cities = ['Bhubaneswar', 'Cuttack', 'Puri', 'Berhampur', 'Rourkela', 'Bangalore', 'Mumbai', 'Delhi']
+        states = ['Odisha', 'Karnataka', 'Maharashtra', 'Delhi', 'Tamil Nadu']
+        base_date = timezone.now().date()
+        rows = []
+        for i in range(200):
+            rows.append({
+                'request_id': f'req-{1000 + i}',
+                'created_at': base_date - timedelta(days=random.randint(0, 365)),
+                'blood_group': random.choice(blood_groups),
+                'urgency': random.choice(urgencies),
+                'status': random.choice(statuses),
+                'city': random.choice(cities),
+                'state': random.choice(states),
+                'source': random.choice(sources),
+                'units_needed': random.randint(1, 4),
+                'patient_age': random.randint(1, 80) if random.random() < 0.8 else None,
+                'sla_minutes': random.choice([60, 90, 120, 180]) if random.random() < 0.7 else None,
+                'closure_type': random.choice(closure_types + ['']),
+                'closure_reason': random.choice(closure_reasons + ['']),
+            })
+        df = pd.DataFrame(rows)
+
+    result = build_charts_and_summary(df)
+    context = {
+        'charts': result.get('charts', []),
+        'summary_table': result.get('summary_table', []),
+        'row_count': result.get('row_count', 0),
+        'column_count': result.get('column_count', 0),
+        'error': result.get('error'),
+        'sheet_name': 'Live (Blood Requests)',
+        'data_source': 'live',
+    }
+    return render(request, 'excel_analytics_dashboard.html', context)

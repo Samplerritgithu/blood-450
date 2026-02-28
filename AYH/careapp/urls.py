@@ -5,8 +5,13 @@ urlpatterns = [
     # Home redirect
     path('home/', views.home_redirect, name='home_redirect'),
     
-    # Registration (donor) – do not change existing login/dashboard logic
+    # Registration (donor) – OTP verification then blood group
     path('register/', views.donor_register, name='donor_register'),
+    path('register/google/', views.google_login, name='google_login'),
+    path('register/google/callback/', views.google_callback, name='google_callback'),
+    path('register/google/complete-profile/', views.google_complete_profile, name='google_complete_profile'),
+    path('register/verify-otp/', views.donor_verify_otp, name='donor_verify_otp'),
+    path('register/resend-otp/', views.donor_resend_otp, name='donor_resend_otp'),
     path('register/select-blood-group/', views.donor_register_select_blood_group, name='donor_register_select_blood_group'),
     
     # Admin pages
@@ -24,6 +29,9 @@ urlpatterns = [
     path('blood-banks/add/', views.admin_add_blood_bank, name='admin_add_blood_bank'),
     path('cities/', views.admin_cities, name='admin_cities'),
     path('cities/add/', views.admin_add_city, name='admin_add_city'),
+    path('analytics/', views.excel_analytics_upload, name='excel_analytics_upload'),
+    path('analytics/dashboard/', views.excel_analytics_dashboard, name='excel_analytics_dashboard'),
+    path('analytics/live/', views.excel_analytics_live, name='excel_analytics_live'),
     
     # Donor pages
     path('notifications/', views.donor_notifications, name='donor_notifications'),
