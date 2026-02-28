@@ -51,6 +51,25 @@ class DonorLoginView(LoginView):
         context['google_oauth_configured'] = bool(getattr(django_settings, 'GOOGLE_OAUTH_CLIENT_ID', None))
         return context
 
+    def get_success_url(self):
+        url = super().get_success_url()
+        login_url = reverse('login')
+        if url:
+            url_path = (url.split('?')[0] or '').strip().rstrip('/')
+            login_path = login_url.rstrip('/')
+            # Never redirect back to login
+            if url_path == login_path or url_path.endswith('/accounts/login'):
+                url = None
+            # For donors, don't send to generic profile/home; always use donor dashboard
+            elif getattr(self.request.user, 'is_authenticated', False) and not self.request.user.is_staff:
+                if url_path in ('/accounts/profile', '/home') or url_path.startswith('/accounts/profile/') or url_path.startswith('/home/'):
+                    url = None
+        if not url:
+            if getattr(self.request.user, 'is_authenticated', False) and self.request.user.is_staff:
+                return reverse('admin_dashboard')
+            return reverse('donor_notifications')
+        return url
+
 
 # Blood compatibility matrix - who can donate to whom
 BLOOD_COMPATIBILITY = {
@@ -1451,19 +1470,115 @@ def google_callback(request):
     return redirect("google_complete_profile")
 
 
+# @login_required
+# @require_http_methods(["GET", "POST"])
+# def google_complete_profile(request):
+#     """
+#     After Google sign-in, collect donor profile details (phone, blood group, health, consents, etc.)
+#     using a manual form similar to the regular registration page.
+#     """
+#     # Ensure profiles exist (google_callback already tries to create them, but guard just in case)
+#     user = request.user
+#     donor_profile, _ = DonorProfile.objects.get_or_create(user=user, defaults={'phone': "", 'phone_verified': False})
+#     user_profile, _ = UserProfile.objects.get_or_create(user=user)
+
+#     from .forms import GoogleProfileCompletionForm  # local import to avoid circulars at module import time
+
+#     if request.method == "GET":
+#         initial = {
+#             'mobile': donor_profile.phone or "",
+#             'gender': user_profile.gender or "",
+#             'date_of_birth': user_profile.date_of_birth,
+#             'alternate_mobile': user_profile.alternate_mobile or "",
+#             'preferred_language': user_profile.preferred_language or "",
+#             'preferred_contact_time': user_profile.preferred_contact_time or "",
+#             'occupation': user_profile.occupation or "",
+#             'emergency_contact_name': user_profile.emergency_contact_name or "",
+#             'emergency_contact_number': user_profile.emergency_contact_number or "",
+#             'state': user_profile.state or "",
+#             'city': user_profile.city or "",
+#             'area': user_profile.area or "",
+#             'pincode': user_profile.pincode or "",
+#             'weight_kg': user_profile.weight_kg,
+#             'donated_before': 'yes' if user_profile.donated_before is True else ('no' if user_profile.donated_before is False else ''),
+#             'last_donation_date': user_profile.last_donation_date,
+#             'medical_conditions': 'yes' if user_profile.medical_conditions is True else ('no' if user_profile.medical_conditions is False else ''),
+#             'currently_healthy': 'yes' if user_profile.currently_healthy is True else ('no' if user_profile.currently_healthy is False else ''),
+#             'emergency_available': 'yes' if user_profile.emergency_available else 'no',
+#             'preferred_contact': user_profile.preferred_contact or 'call',
+#             'consent_contact': user_profile.consent_contact,
+#             'consent_terms': user_profile.consent_terms,
+#             'blood_group': donor_profile.blood_group or "",
+#         }
+#         form = GoogleProfileCompletionForm(initial=initial)
+#         context = {
+#             'form': form,
+#             'google_email': user.email,
+#             'google_name': user.first_name or user.username,
+#         }
+#         return render(request, 'registration/google_complete_profile.html', context)
+
+#     # POST
+#     form = GoogleProfileCompletionForm(request.POST, request.FILES)
+#     if not form.is_valid():
+#         context = {
+#             'form': form,
+#             'google_email': user.email,
+#             'google_name': user.first_name or user.username,
+#         }
+#         return render(request, 'registration/google_complete_profile.html', context, status=400)
+
+#     data = form.cleaned_data
+#     # Update user profile fields
+#     user_profile.gender = data.get('gender') or None
+#     user_profile.date_of_birth = data.get('date_of_birth')
+#     user_profile.state = data.get('state') or ''
+#     user_profile.city = data.get('city') or ''
+#     user_profile.area = data.get('area') or ''
+#     user_profile.pincode = data.get('pincode') or ''
+#     user_profile.weight_kg = data.get('weight_kg')
+
+#     def _bool_choice_local(val):
+#         if not val or val == '':
+#             return None
+#         return val.lower() == 'yes'
+
+#     user_profile.donated_before = _bool_choice_local(data.get('donated_before'))
+#     user_profile.last_donation_date = data.get('last_donation_date')
+#     user_profile.medical_conditions = _bool_choice_local(data.get('medical_conditions'))
+#     user_profile.currently_healthy = _bool_choice_local(data.get('currently_healthy'))
+#     user_profile.emergency_available = _bool_choice_local(data.get('emergency_available')) if data.get('emergency_available') else True
+#     user_profile.preferred_contact = data.get('preferred_contact') or 'call'
+#     user_profile.consent_contact = bool(data.get('consent_contact'))
+#     user_profile.consent_terms = bool(data.get('consent_terms'))
+#     user_profile.alternate_mobile = data.get('alternate_mobile') or ''
+#     user_profile.preferred_language = data.get('preferred_language') or ''
+#     user_profile.preferred_contact_time = data.get('preferred_contact_time') or ''
+#     user_profile.occupation = data.get('occupation') or ''
+#     user_profile.emergency_contact_name = data.get('emergency_contact_name') or ''
+#     user_profile.emergency_contact_number = data.get('emergency_contact_number') or ''
+#     if data.get('profile_photo'):
+#         user_profile.profile_photo = data['profile_photo']
+#     user_profile.save()
+
+#     # Update donor profile essentials
+#     donor_profile.phone = data.get('mobile')
+#     donor_profile.blood_group = data.get('blood_group') or None
+#     donor_profile.save(update_fields=['phone', 'blood_group'])
+
+#     return redirect('donor_notifications')
+
+
+from django.contrib.auth import update_session_auth_hash  # add at top if you want to keep session valid
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def google_complete_profile(request):
-    """
-    After Google sign-in, collect donor profile details (phone, blood group, health, consents, etc.)
-    using a manual form similar to the regular registration page.
-    """
-    # Ensure profiles exist (google_callback already tries to create them, but guard just in case)
     user = request.user
     donor_profile, _ = DonorProfile.objects.get_or_create(user=user, defaults={'phone': "", 'phone_verified': False})
     user_profile, _ = UserProfile.objects.get_or_create(user=user)
 
-    from .forms import GoogleProfileCompletionForm  # local import to avoid circulars at module import time
+    from .forms import GoogleProfileCompletionForm
 
     if request.method == "GET":
         initial = {
@@ -1490,26 +1605,32 @@ def google_complete_profile(request):
             'consent_contact': user_profile.consent_contact,
             'consent_terms': user_profile.consent_terms,
             'blood_group': donor_profile.blood_group or "",
+            # don't set initial password fields
         }
         form = GoogleProfileCompletionForm(initial=initial)
-        context = {
+        return render(request, 'registration/google_complete_profile.html', {
             'form': form,
             'google_email': user.email,
             'google_name': user.first_name or user.username,
-        }
-        return render(request, 'registration/google_complete_profile.html', context)
+        })
 
-    # POST
     form = GoogleProfileCompletionForm(request.POST, request.FILES)
     if not form.is_valid():
-        context = {
+        return render(request, 'registration/google_complete_profile.html', {
             'form': form,
             'google_email': user.email,
             'google_name': user.first_name or user.username,
-        }
-        return render(request, 'registration/google_complete_profile.html', context, status=400)
+        }, status=400)
 
     data = form.cleaned_data
+
+    # ✅ SET PASSWORD HERE
+    password = data.get("password")
+    if password:
+        user.set_password(password)
+        user.save(update_fields=["password"])
+        update_session_auth_hash(request, user)  # keeps them logged in after password change
+
     # Update user profile fields
     user_profile.gender = data.get('gender') or None
     user_profile.date_of_birth = data.get('date_of_birth')
@@ -1542,13 +1663,11 @@ def google_complete_profile(request):
         user_profile.profile_photo = data['profile_photo']
     user_profile.save()
 
-    # Update donor profile essentials
     donor_profile.phone = data.get('mobile')
     donor_profile.blood_group = data.get('blood_group') or None
     donor_profile.save(update_fields=['phone', 'blood_group'])
 
     return redirect('donor_notifications')
-
 
 # ----- Donor registration (web): form -> OTP verification -> blood group modal -> auto login -----
 

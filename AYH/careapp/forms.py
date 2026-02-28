@@ -18,16 +18,20 @@ class DonorLoginForm(AuthenticationForm):
         
         value = value.strip()
         
-        # Try to find user case-insensitively first
-        # This handles superusers created with mixed case usernames
+        # Try to find user by username (case-insensitive) first
         try:
             user = User.objects.get(username__iexact=value)
-            # Return the actual username from database (preserves case)
             return user.username
         except User.DoesNotExist:
-            # User doesn't exist, return lowercase for donor accounts
-            # This will allow the authentication to fail with proper error message
-            return value.lower()
+            pass
+        # Google OAuth users have username derived from email (e.g. john_doe), not the full email.
+        # Allow login with email so they can use their Google email + password.
+        try:
+            user = User.objects.get(email__iexact=value)
+            return user.username
+        except User.DoesNotExist:
+            pass
+        return value.lower()
     
     def clean(self):
         """Override clean to handle case-insensitive authentication.
@@ -315,6 +319,27 @@ class GoogleProfileCompletionForm(forms.Form):
         required=True,
         label='Blood Group'
     )
+    password = forms.CharField(
+        label="Password",
+        required=True,
+        strip=False,
+        min_length=8,
+        widget=forms.PasswordInput(attrs={"placeholder": "Create a password", "autocomplete": "new-password"})
+    )
+
+    confirm_password = forms.CharField(
+        label="Confirm Password",
+        required=True,
+        strip=False,
+        widget=forms.PasswordInput(attrs={"placeholder": "Re-enter password", "autocomplete": "new-password"})
+    )
+
+    def clean_confirm_password(self):
+        password = self.cleaned_data.get("password")
+        confirm_password = self.cleaned_data.get("confirm_password")
+        if password and confirm_password and password != confirm_password:
+            raise ValidationError("Passwords do not match.")
+        return confirm_password
 
     def clean_mobile(self):
         """Required donor mobile number. Accepts 10-digit or with country code (e.g. +919618394701)."""
