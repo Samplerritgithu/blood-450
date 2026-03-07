@@ -1595,6 +1595,8 @@ def google_complete_profile(request):
             'city': user_profile.city or "",
             'area': user_profile.area or "",
             'pincode': user_profile.pincode or "",
+            'last_lat': donor_profile.last_lat,
+            'last_lng': donor_profile.last_lng,
             'weight_kg': user_profile.weight_kg,
             'donated_before': 'yes' if user_profile.donated_before is True else ('no' if user_profile.donated_before is False else ''),
             'last_donation_date': user_profile.last_donation_date,
@@ -1665,7 +1667,18 @@ def google_complete_profile(request):
 
     donor_profile.phone = data.get('mobile')
     donor_profile.blood_group = data.get('blood_group') or None
-    donor_profile.save(update_fields=['phone', 'blood_group'])
+    update_fields = ['phone', 'blood_group']
+    # Save auto-detected or submitted location to donor profile (for matching)
+    lat, lng = data.get('last_lat'), data.get('last_lng')
+    if lat is not None and lng is not None:
+        donor_profile.last_lat = lat
+        donor_profile.last_lng = lng
+        donor_profile.location_updated_at = timezone.now()
+        update_fields.extend(['last_lat', 'last_lng', 'location_updated_at'])
+    if data.get('city'):
+        donor_profile.city = data.get('city') or ''
+        update_fields.append('city')
+    donor_profile.save(update_fields=update_fields)
 
     return redirect('donor_notifications')
 

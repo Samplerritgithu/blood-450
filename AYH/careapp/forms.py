@@ -265,6 +265,8 @@ class GoogleProfileCompletionForm(forms.Form):
         label='Pincode',
         widget=forms.TextInput(attrs={'placeholder': 'Pincode'})
     )
+    last_lat = forms.FloatField(required=False, widget=forms.HiddenInput())
+    last_lng = forms.FloatField(required=False, widget=forms.HiddenInput())
 
     weight_kg = forms.FloatField(
         required=False,

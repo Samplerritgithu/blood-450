@@ -295,6 +295,20 @@
          background: #fff;
          color: #222;
      }
+     .location-detect-wrap { padding: 12px 0; }
+     .btn-location {
+         padding: 10px 18px;
+         font-size: 0.9rem;
+         font-weight: 600;
+         color: #c0392b;
+         background: rgba(192, 57, 43, 0.08);
+         border: 1px solid rgba(192, 57, 43, 0.3);
+         border-radius: 10px;
+         cursor: pointer;
+         transition: background 0.2s, border-color 0.2s;
+     }
+     .btn-location:hover { background: rgba(192, 57, 43, 0.15); border-color: #c0392b; }
+     .btn-location:disabled { opacity: 0.6; cursor: not-allowed; }
      
      /* Footer buttons */
      .form-footer {
@@ -427,6 +441,15 @@
             <!-- Step 2: Location & donation -->
             <div class="form-step" data-step="2">
                 <div class="step-title">Step 2 — Location & donation info</div>
+                {{ form.last_lat }}
+                {{ form.last_lng }}
+                <div class="location-detect-wrap" style="margin-bottom: 18px;">
+                    <p id="locationStatus" class="help" style="margin-bottom: 8px;"></p>
+                    <button type="button" id="btnDetectLocation" class="btn-location">
+                        📍 Detect my location
+                    </button>
+                    <span class="help" style="display: block; margin-top: 6px;">We'll use this to match you with nearby blood requests. You can also enter address manually below.</span>
+                </div>
                 <div class="grid-3">
                     <div class="form-group">
                         <label for="{{ form.state.id_for_label }}">State</label>
@@ -645,6 +668,63 @@
     btnNext.addEventListener('click', function() {
         if (currentStep < totalSteps) showStep(currentStep + 1);
     });
+
+    // Auto-detect location (Step 2) – saves to donor profile on submit
+    var locationStatus = document.getElementById('locationStatus');
+    var btnDetectLocation = document.getElementById('btnDetectLocation');
+    if (btnDetectLocation) {
+        btnDetectLocation.addEventListener('click', function() {
+            var latInput = document.getElementById('id_last_lat');
+            var lngInput = document.getElementById('id_last_lng');
+            if (!latInput || !lngInput) return;
+            if (!navigator.geolocation) {
+                locationStatus.textContent = 'Location is not supported by your browser. Please enter address manually.';
+                locationStatus.style.color = '#c0392b';
+                return;
+            }
+            locationStatus.textContent = 'Detecting your location…';
+            locationStatus.style.color = '#666';
+            btnDetectLocation.disabled = true;
+            navigator.geolocation.getCurrentPosition(
+                function(pos) {
+                    var lat = pos.coords.latitude;
+                    var lng = pos.coords.longitude;
+                    latInput.value = lat.toFixed(6);
+                    lngInput.value = lng.toFixed(6);
+                    locationStatus.textContent = 'Coordinates saved. Looking up address…';
+                    btnDetectLocation.disabled = false;
+                    // Reverse geocode via Nominatim (no API key)
+                    fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lng + '&format=json&addressdetails=1', {
+                        headers: { 'Accept': 'application/json', 'Accept-Language': 'en', 'User-Agent': 'Blood450-DonorProfile/1.0' }
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        var addr = data.address || {};
+                        var stateEl = document.getElementById('id_state');
+                        var cityEl = document.getElementById('id_city');
+                        var areaEl = document.getElementById('id_area');
+                        var pincodeEl = document.getElementById('id_pincode');
+                        if (stateEl && (addr.state || addr.county)) stateEl.value = addr.state || addr.county || '';
+                        if (cityEl && (addr.city || addr.town || addr.village || addr.municipality)) cityEl.value = addr.city || addr.town || addr.village || addr.municipality || '';
+                        if (areaEl && (addr.suburb || addr.neighbourhood || addr.locality)) areaEl.value = addr.suburb || addr.neighbourhood || addr.locality || '';
+                        if (pincodeEl && addr.postcode) pincodeEl.value = addr.postcode;
+                        locationStatus.textContent = 'Location detected and saved. You can edit the fields below if needed.';
+                        locationStatus.style.color = '#059669';
+                    })
+                    .catch(function() {
+                        locationStatus.textContent = 'Location coordinates saved. You can enter address manually below.';
+                        locationStatus.style.color = '#059669';
+                    });
+                },
+                function() {
+                    locationStatus.textContent = 'Could not get location. Please allow location access or enter address manually.';
+                    locationStatus.style.color = '#c0392b';
+                    btnDetectLocation.disabled = false;
+                },
+                { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+            );
+        });
+    }
 
     showStep(1);
 })();

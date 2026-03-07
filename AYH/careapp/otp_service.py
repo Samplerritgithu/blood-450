@@ -55,17 +55,25 @@ def send_otp_sms(phone, otp):
     For twilio_verify, pass otp=None (Twilio generates and sends); returns True if sent.
     """
     backend = getattr(settings, "OTP_SMS_BACKEND", "console")
+    logger.info("Sending OTP using backend: %s", backend)
+    logger.info("Phone: %s, OTP: %s", phone, otp)
+
     if backend == "console":
         logger.info("OTP for %s: %s (not sent; set OTP_SMS_BACKEND for real SMS)", phone, otp)
         return True
     if backend == "twilio":
+        logger.info("Using Twilio to send OTP")
         return _send_via_twilio(phone, otp)
     if backend == "twilio_verify":
+        logger.info("Using Twilio Verify to send OTP")
         return _send_via_twilio_verify(phone)
     if backend == "msg91":
+        logger.info("Using MSG91 to send OTP")
         return _send_via_msg91(phone, otp)
     if backend == "fast2sms":
+        logger.info("Using Fast2SMS to send OTP")
         return _send_via_fast2sms(phone, otp)
+
     logger.warning("Unknown OTP_SMS_BACKEND=%s; logging OTP for %s: %s", backend, phone, otp)
     return True
 
@@ -181,6 +189,8 @@ def _send_via_fast2sms(phone, otp):
         if not api_key:
             logger.warning("Fast2SMS not configured; OTP for %s: %s", phone, otp)
             return True
+        logger.info("Fast2SMS API Key found. Preparing request.")
+
         # Fast2SMS expects 10-digit Indian number(s)
         p = (phone or "").strip().replace(" ", "").replace("-", "")
         if p.startswith("+91"):
@@ -190,6 +200,7 @@ def _send_via_fast2sms(phone, otp):
         if len(p) != 10 or not p.isdigit():
             logger.warning("Fast2SMS: invalid Indian number %s (digits=%s)", phone, p)
             return False
+
         url = "https://www.fast2sms.com/dev/bulkV2"
         payload = {
             "variables_values": str(otp),
@@ -206,6 +217,7 @@ def _send_via_fast2sms(phone, otp):
             },
             method="POST",
         )
+        logger.info("Sending request to Fast2SMS: %s", payload)
         with urllib.request.urlopen(req, timeout=15) as r:
             resp_body = r.read().decode()
             logger.info("Fast2SMS response for %s: %s", p, resp_body[:400])
@@ -218,16 +230,22 @@ def _send_via_fast2sms(phone, otp):
                     logger.warning("Fast2SMS API returned false: %s", data.get("message", resp_body))
                     return False
             except (ValueError, TypeError):
-                pass
+                logger.error("Failed to parse Fast2SMS response: %s", resp_body)
+                return False
             return True
-    except Exception as e:
+    except urllib.error.HTTPError as e:
         err_body = ""
         if hasattr(e, "fp") and e.fp:
             try:
                 err_body = e.fp.read().decode()[:300]
             except Exception:
                 pass
-        logger.exception("Fast2SMS failed for %s: %s %s", phone, e, err_body)
+        logger.error("Fast2SMS failed for %s: HTTP Error %s: %s", phone, e.code, err_body)
+        if "website verification" in err_body.lower():
+            logger.error("Fast2SMS: Website verification required. Complete verification in the Fast2SMS dashboard.")
+        return False
+    except Exception as e:
+        logger.exception("Fast2SMS failed for %s: %s", phone, e)
         return False
 
 
