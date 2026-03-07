@@ -362,7 +362,7 @@ MSG91_OTP_TEMPLATE_ID = config("MSG91_OTP_TEMPLATE_ID", default=None)
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-APP_BASE_URL = config("APP_BASE_URL", default="http://localhost:8000")
+APP_BASE_URL = config("APP_BASE_URL", default="http://localhost:8000").rstrip("/")
 
 GOOGLE_OAUTH_CLIENT_ID = config("GOOGLE_OAUTH_CLIENT_ID", default=None)
 GOOGLE_OAUTH_CLIENT_SECRET = config("GOOGLE_OAUTH_CLIENT_SECRET", default=None)

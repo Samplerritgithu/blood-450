@@ -1371,115 +1371,116 @@ def google_login(request):
     return redirect(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
 
 def google_callback(request):
-    """Handle Google OAuth callback: exchange code for token, get user info, login, redirect to donor dashboard."""
     import requests
 
-    state = request.GET.get("state")
-    code = request.GET.get("code")
-
-    if not state or state != request.session.get("google_oauth_state"):
-        messages.error(request, "Invalid or expired Google sign-in. Please try again.")
-        return redirect("donor_register")
-
-    request.session.pop("google_oauth_state", None)
-
-    if not code:
-        messages.error(request, "Google sign-in was cancelled or failed.")
-        return redirect("donor_register")
-
-    client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
-    client_secret = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_SECRET", None)
-    redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
-
-    if not client_id or not client_secret or not redirect_uri:
-        messages.error(request, "Google Sign-In is not configured.")
-        return redirect("donor_register")
-
-    token_data = {
-        "code": code,
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "redirect_uri": redirect_uri,
-        "grant_type": "authorization_code",
-    }
-
     try:
+        state = request.GET.get("state")
+        code = request.GET.get("code")
+
+        if not state or state != request.session.get("google_oauth_state"):
+            messages.error(request, "Invalid or expired Google sign-in. Please try again.")
+            return redirect("donor_register")
+
+        request.session.pop("google_oauth_state", None)
+
+        if not code:
+            messages.error(request, "Google sign-in was cancelled or failed.")
+            return redirect("donor_register")
+
+        client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
+        client_secret = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_SECRET", None)
+        redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
+
+        if not client_id or not client_secret or not redirect_uri:
+            logger.error(
+                "Google config missing: client_id=%s client_secret=%s redirect_uri=%s",
+                bool(client_id), bool(client_secret), redirect_uri
+            )
+            messages.error(request, "Google Sign-In is not configured.")
+            return redirect("donor_register")
+
         token_resp = requests.post(
             GOOGLE_TOKEN_URL,
-            data=token_data,
+            data={
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10,
         )
+        logger.info("Google token status: %s", token_resp.status_code)
         token_resp.raise_for_status()
         token_json = token_resp.json()
         access_token = token_json.get("access_token")
 
         if not access_token:
+            logger.error("Google token missing. Response: %s", token_json)
             messages.error(request, "Google sign-in failed (no token).")
             return redirect("donor_register")
 
-    except Exception as e:
-        logger.exception("Google token exchange failed: %s", e)
-        messages.error(request, "Google sign-in failed. Please try again.")
-        return redirect("donor_register")
-
-    try:
         userinfo_resp = requests.get(
             GOOGLE_USERINFO_URL,
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
         )
+        logger.info("Google userinfo status: %s", userinfo_resp.status_code)
         userinfo_resp.raise_for_status()
         userinfo = userinfo_resp.json()
 
-    except Exception as e:
-        logger.exception("Google userinfo failed: %s", e)
-        messages.error(request, "Google sign-in failed. Please try again.")
-        return redirect("donor_register")
+        email = (userinfo.get("email") or "").strip().lower()
+        name = (userinfo.get("name") or email or "User").strip()
 
-    email = (userinfo.get("email") or "").strip().lower()
-    name = (userinfo.get("name") or userinfo.get("email") or "User").strip()
+        if not email:
+            logger.error("Google userinfo missing email: %s", userinfo)
+            messages.error(request, "Google account did not provide an email.")
+            return redirect("donor_register")
 
-    if not email:
-        messages.error(request, "Google account did not provide an email.")
-        return redirect("donor_register")
+        user = User.objects.filter(email__iexact=email).first()
 
-    user = User.objects.filter(email__iexact=email).first()
-    created = False
+        if not user:
+            username = email.split("@")[0].replace(".", "_")[:30]
+            base_username = username
+            n = 0
+            while User.objects.filter(username__iexact=username).exists():
+                n += 1
+                username = f"{base_username}{n}"[:30]
 
-    if not user:
-        username = email.split("@")[0].replace(".", "_")[:30]
-        base_username = username
-        n = 0
-        while User.objects.filter(username__iexact=username).exists():
-            n += 1
-            username = f"{base_username}{n}"[:30]
+            with transaction.atomic():
+                user = User.objects.create(
+                    username=username,
+                    email=email,
+                    first_name=name[:30],
+                    is_active=True,
+                    is_staff=False,
+                )
+                user.set_unusable_password()
+                user.save()
 
-        with transaction.atomic():
-            user = User.objects.create(
-                username=username,
-                email=email,
-                first_name=name[:30],
-                is_active=True,
-                is_staff=False,
+                UserProfile.objects.get_or_create(user=user)
+                DonorProfile.objects.get_or_create(
+                    user=user,
+                    defaults={"phone": "", "phone_verified": False}
+                )
+        else:
+            UserProfile.objects.get_or_create(user=user)
+            DonorProfile.objects.get_or_create(
+                user=user,
+                defaults={"phone": "", "phone_verified": False}
             )
-            user.set_unusable_password()
-            user.save()
-            UserProfile.objects.create(user=user)
-            DonorProfile.objects.create(user=user, phone="", phone_verified=False)
-            created = True
-    else:
-        if not hasattr(user, "donor_profile"):
-            DonorProfile.objects.create(user=user, phone="", phone_verified=False)
-        if not hasattr(user, "user_profile"):
-            UserProfile.objects.create(user=user)
 
-    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        login(request, user, backend="django.contrib.auth.backends.ModelBackend")
 
-    if _is_profile_complete(user):
-        return redirect("donor_notifications")
-    return redirect("google_complete_profile")
+        if _is_profile_complete(user):
+            return redirect("donor_notifications")
+        return redirect("google_complete_profile")
 
+    except Exception as e:
+        logger.exception("Google callback crashed: %s", e)
+        messages.error(request, "Google sign-in failed due to a server error.")
+        return redirect("donor_register")
 
 
 from django.contrib.auth import update_session_auth_hash  # add at top if you want to keep session valid
