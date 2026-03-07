@@ -78,6 +78,7 @@ ALLOWED_HOSTS = [
     "localhost",
     ".vercel.app",
 ]
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # ==============================================================================
 # APPLICATIONS
@@ -249,9 +250,8 @@ CSRF_COOKIE_PATH = "/"
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
-    "https://blood-450-96iv.vercel.app",
+    "https://*.vercel.app",
 ]
-
 CSRF_FAILURE_VIEW = "django.views.csrf.csrf_failure"
 
 # ==============================================================================
@@ -360,10 +360,17 @@ TWILIO_VERIFY_SERVICE_SID = config("TWILIO_VERIFY_SERVICE_SID", default=None)
 MSG91_AUTH_KEY = config("MSG91_AUTH_KEY", default=None)
 MSG91_OTP_TEMPLATE_ID = config("MSG91_OTP_TEMPLATE_ID", default=None)
 
-# Google Sign-In (donor registration) – create credentials at https://console.cloud.google.com/apis/credentials
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+APP_BASE_URL = config("APP_BASE_URL", default="http://localhost:8000")
+
 GOOGLE_OAUTH_CLIENT_ID = config("GOOGLE_OAUTH_CLIENT_ID", default=None)
 GOOGLE_OAUTH_CLIENT_SECRET = config("GOOGLE_OAUTH_CLIENT_SECRET", default=None)
 
+GOOGLE_REDIRECT_URI = config(
+    "GOOGLE_REDIRECT_URI",
+    default=f"{APP_BASE_URL}/register/google/callback/",
+)
 # ==============================================================================
 # BLOOD REQUEST LOCATION
 # ==============================================================================
