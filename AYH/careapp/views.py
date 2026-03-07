@@ -1395,6 +1395,12 @@ def google_callback(request):
         client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
         client_secret = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_SECRET", None)
         redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
+        logger.info(
+                "Google config check: client_id=%s client_secret=%s redirect_uri=%s",
+                bool(client_id),
+                bool(client_secret),
+                redirect_uri,
+            )
 
         if not client_id or not client_secret or not redirect_uri:
             logger.error(

@@ -8,7 +8,7 @@ This guide covers deploying the AYH Django app to Vercel (production) and how to
 
 - **GitHub repo** with your code (e.g. `blood-450-main` with an `AYH` folder inside).
 - **PostgreSQL database** for production (Vercel serverless does not use SQLite). Use one of:
-  - [Supabase](https://supabase.com) (free tier) → Database → Connection string (URI)
+  - [Supabase](https://supabase.com) (free tier) → **Project Settings → Database** → use the **Connection pooling** (Transaction) URI for serverless, not the direct Session URI on port 5432 (to avoid “Tenant or user not found”).
   - [Neon](https://neon.tech) (free tier) → Connection string
   - Any other PostgreSQL host
 
@@ -36,7 +36,7 @@ In the Vercel project: **Settings → Environment Variables**. Add:
 
 | Name | Value | Notes |
 |------|--------|--------|
-| `DATABASE_URL` | `postgres://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require` | **Required** on Vercel (see settings.py). |
+| `DATABASE_URL` | Your PostgreSQL URI (Supabase: use **Connection pooling** URI from Project Settings → Database). | **Required** on Vercel. Wrong or old URI causes “Tenant or user not found” and 500s. |
 | `DJANGO_SECRET_KEY` | A long random string | Use a new secret for production. |
 | `DJANGO_ENV` | `production` | So `IS_PRODUCTION` is True. |
 
@@ -130,6 +130,25 @@ Do **not** run this script on Vercel’s serverless runtime; run it on your mach
 - **“DATABASE_URL is missing”**  
   Add `DATABASE_URL` in Vercel Environment Variables and redeploy.
 
+- **500 on every request + “FATAL: Tenant or user not found” (Supabase)**  
+  Your app cannot connect to the database. This causes 500 on `/admin/login/`, `/register/google/`, and any page that touches the DB.
+
+  1. **Get a fresh connection string from Supabase**
+     - Open [Supabase Dashboard](https://supabase.com/dashboard) → your project → **Project Settings** (gear) → **Database**.
+     - Under **Connection string**, choose **URI**.
+     - For **Vercel (serverless)**, use the **Connection pooling** string (Transaction mode, port **6543**, or Session mode if your region uses it). Do **not** use the direct “Session” connection on port 5432 for serverless unless Supabase explicitly documents it for your region.
+     - Copy the URI. It should look like:  
+       `postgres://postgres.[PROJECT-REF]:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres`  
+       or similar. Replace `[YOUR-PASSWORD]` with your database password (not the pooler password if different).
+  2. **Ensure the username includes the project reference**  
+     Some Supabase pooler URLs require the project ref in the user, e.g. `postgres.abcdefghijklmnop` instead of just `postgres`. Use the exact string from the Supabase “Connection pooling” section.
+  3. **Update Vercel**
+     - Vercel → Project → **Settings** → **Environment Variables**.
+     - Set `DATABASE_URL` to the new value (Production, and optionally Preview).
+     - **Redeploy** (Deployments → … → Redeploy) so the new env is used.
+
+  If the project was paused or recreated, create a new project and use its new connection string.
+
 - **Static files 404**  
   Ensure Build Command runs `python manage.py collectstatic --noinput` and that WhiteNoise is in `MIDDLEWARE` (already in your settings).
 
@@ -142,3 +161,6 @@ Do **not** run this script on Vercel’s serverless runtime; run it on your mach
 
 - **Migrations not applied**  
   Run `python manage.py migrate` locally with `DATABASE_URL` set to your production DB.
+
+- **“No directory at: …/staticfiles/” in logs**  
+  On Vercel, the build may not persist `staticfiles` into the serverless bundle. If admin/static assets still load (e.g. admin CSS), you can ignore this. If you get 404s on static files, ensure the Build Command runs `python manage.py collectstatic --noinput` and that the output directory is included in your deployment (see [Vercel docs](https://vercel.com/docs/functions/serverless-functions/runtimes#bundled-files) for Python).
