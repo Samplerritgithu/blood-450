@@ -379,7 +379,13 @@ if os.environ.get("VERCEL"):
     _vercel_url = os.environ.get("VERCEL_URL", "").strip()
     if _vercel_url:
         _default_base = f"https://{_vercel_url.rstrip('/')}"
-APP_BASE_URL = config("APP_BASE_URL", default=_default_base).rstrip("/")
+
+
+
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+APP_BASE_URL = config("APP_BASE_URL", default="http://localhost:8000").rstrip("/")
 
 GOOGLE_OAUTH_CLIENT_ID = config("GOOGLE_OAUTH_CLIENT_ID", default=None)
 GOOGLE_OAUTH_CLIENT_SECRET = config("GOOGLE_OAUTH_CLIENT_SECRET", default=None)
