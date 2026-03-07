@@ -1349,26 +1349,31 @@ def _is_profile_complete(user):
 
 def google_login(request):
     """Redirect user to Google OAuth consent screen. State is stored in session."""
-    client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
-    redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
+    try:
+        client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
+        redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
 
-    if not client_id or not redirect_uri:
-        messages.error(request, "Google Sign-In is not configured.")
-        return redirect("login")
+        if not client_id or not redirect_uri:
+            messages.error(request, "Google Sign-In is not configured.")
+            return redirect("login")
 
-    state = get_random_string(32)
-    request.session["google_oauth_state"] = state
+        state = get_random_string(32)
+        request.session["google_oauth_state"] = state
 
-    params = {
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "state": state,
-        "access_type": "offline",
-        "prompt": "select_account",
-    }
-    return redirect(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+            "access_type": "offline",
+            "prompt": "select_account",
+        }
+        return redirect(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
+    except Exception as e:
+        logger.exception("Google login redirect failed: %s", e)
+        messages.error(request, "Google Sign-In could not start. Please try again.")
+        return redirect("donor_register")
 
 def google_callback(request):
     import requests
@@ -1411,7 +1416,9 @@ def google_callback(request):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10,
         )
-        logger.info("Google token status: %s", token_resp.status_code)
+        logger.info("Google token status: %s redirect_uri=%s", token_resp.status_code, redirect_uri)
+        if not token_resp.ok:
+            logger.error("Google token error response: %s", token_resp.text)
         token_resp.raise_for_status()
         token_json = token_resp.json()
         access_token = token_json.get("access_token")

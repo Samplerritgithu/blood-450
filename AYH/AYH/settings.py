@@ -247,11 +247,22 @@ CSRF_COOKIE_AGE = 31449600
 CSRF_COOKIE_DOMAIN = None
 CSRF_COOKIE_PATH = "/"
 
-CSRF_TRUSTED_ORIGINS = [
+# Build CSRF trusted origins: localhost + Vercel wildcard + explicit production URL
+_CSRF_ORIGINS = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
     "https://*.vercel.app",
 ]
+# Add exact production URL so cookies/redirects and admin login work on Vercel
+_APP_BASE = config("APP_BASE_URL", default="").strip().rstrip("/")
+if _APP_BASE and (_APP_BASE.startswith("https://") or _APP_BASE.startswith("http://")):
+    _CSRF_ORIGINS.append(_APP_BASE)
+# When on Vercel, also trust VERCEL_URL so we don't rely on APP_BASE_URL being set
+if os.environ.get("VERCEL"):
+    _vurl = os.environ.get("VERCEL_URL", "").strip()
+    if _vurl:
+        _CSRF_ORIGINS.append(f"https://{_vurl.rstrip('/')}")
+CSRF_TRUSTED_ORIGINS = _CSRF_ORIGINS
 CSRF_FAILURE_VIEW = "django.views.csrf.csrf_failure"
 
 # ==============================================================================
@@ -362,7 +373,13 @@ MSG91_OTP_TEMPLATE_ID = config("MSG91_OTP_TEMPLATE_ID", default=None)
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-APP_BASE_URL = config("APP_BASE_URL", default="http://localhost:8000").rstrip("/")
+# On Vercel, default to deployment URL so OAuth redirect/callback and CSRF work
+_default_base = "http://localhost:8000"
+if os.environ.get("VERCEL"):
+    _vercel_url = os.environ.get("VERCEL_URL", "").strip()
+    if _vercel_url:
+        _default_base = f"https://{_vercel_url.rstrip('/')}"
+APP_BASE_URL = config("APP_BASE_URL", default=_default_base).rstrip("/")
 
 GOOGLE_OAUTH_CLIENT_ID = config("GOOGLE_OAUTH_CLIENT_ID", default=None)
 GOOGLE_OAUTH_CLIENT_SECRET = config("GOOGLE_OAUTH_CLIENT_SECRET", default=None)

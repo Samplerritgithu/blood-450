@@ -43,7 +43,16 @@ In the Vercel project: **Settings → Environment Variables**. Add:
 Optional:
 
 - `DJANGO_DEBUG` = `0` or leave unset (defaults to False in production).
+- `APP_BASE_URL` = `https://your-app.vercel.app` (e.g. `https://blood-450-gqkc.vercel.app`). If unset, the app uses `VERCEL_URL` automatically on Vercel.
+- **Google Sign-In:** `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`. You can leave `GOOGLE_REDIRECT_URI` unset; it is built from `APP_BASE_URL` (or `https://$VERCEL_URL` on Vercel).
 - Any other keys your app reads (e.g. Twilio, etc.).
+
+**Important for Google Sign-In on Vercel:** In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → your OAuth 2.0 Client ID → add:
+
+- **Authorised JavaScript origins:** `https://blood-450-gqkc.vercel.app` (use your actual Vercel URL).
+- **Authorised redirect URIs:** `https://blood-450-gqkc.vercel.app/register/google/callback/` (trailing slash must match).
+
+If these are missing or the URL is wrong, Google login will fail (e.g. redirect_uri_mismatch or 500).
 
 Then **Save** and **Redeploy** so the new env vars are used.
 
@@ -124,8 +133,12 @@ Do **not** run this script on Vercel’s serverless runtime; run it on your mach
 - **Static files 404**  
   Ensure Build Command runs `python manage.py collectstatic --noinput` and that WhiteNoise is in `MIDDLEWARE` (already in your settings).
 
-- **CSRF / cookie errors**  
-  Add your Vercel URL (e.g. `https://your-app.vercel.app`) to `CSRF_TRUSTED_ORIGINS` in `AYH/settings.py` (you already have `https://blood-450-96iv.vercel.app`).
+- **CSRF / cookie errors / admin login not redirecting**  
+  The app adds your Vercel URL to `CSRF_TRUSTED_ORIGINS` automatically when `APP_BASE_URL` is set or when `VERCEL_URL` is present. Ensure `APP_BASE_URL` (or Vercel’s automatic `VERCEL_URL`) matches your live URL so cookies and redirects work.
+
+- **Google Sign-In 500 or “redirect_uri_mismatch”**  
+  1) Set `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in Vercel.  
+  2) In Google Cloud Console, add **Authorised JavaScript origins:** `https://your-app.vercel.app` and **Authorised redirect URIs:** `https://your-app.vercel.app/register/google/callback/` (exact URL, including trailing slash).
 
 - **Migrations not applied**  
   Run `python manage.py migrate` locally with `DATABASE_URL` set to your production DB.
