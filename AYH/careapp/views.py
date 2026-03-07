@@ -1351,7 +1351,8 @@ def google_login(request):
     """Redirect user to Google OAuth consent screen. State is stored in session."""
     try:
         client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
-        redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
+        redirect_uri = django_settings.GOOGLE_REDIRECT_URI
+        logger.info("GOOGLE LOGIN redirect_uri=%s", redirect_uri)
 
         if not client_id or not redirect_uri:
             messages.error(request, "Google Sign-In is not configured.")
@@ -1394,7 +1395,7 @@ def google_callback(request):
 
         client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
         client_secret = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_SECRET", None)
-        redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
+        redirect_uri = django_settings.GOOGLE_REDIRECT_URI        
         logger.info(
                 "Google config check: client_id=%s client_secret=%s redirect_uri=%s",
                 bool(client_id),
