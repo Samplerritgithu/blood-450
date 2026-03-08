@@ -381,8 +381,6 @@ if os.environ.get("VERCEL"):
         _default_base = f"https://{_vercel_url.rstrip('/')}"
 
 
-
-
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 APP_BASE_URL = config("APP_BASE_URL", default="http://localhost:8000").rstrip("/")
