@@ -40,35 +40,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_RADIUS_KM = getattr(django_settings, 'DEFAULT_RADIUS_KM', 10)
 
 
-class DonorLoginView(LoginView):
-    """Login view that uses DonorLoginForm so username (email) is normalized to lowercase."""
-    form_class = DonorLoginForm
-    template_name = 'registration/login.html'
-    redirect_authenticated_user = True
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['google_oauth_configured'] = bool(getattr(django_settings, 'GOOGLE_OAUTH_CLIENT_ID', None))
-        return context
-
-    def get_success_url(self):
-        url = super().get_success_url()
-        login_url = reverse('login')
-        if url:
-            url_path = (url.split('?')[0] or '').strip().rstrip('/')
-            login_path = login_url.rstrip('/')
-            # Never redirect back to login
-            if url_path == login_path or url_path.endswith('/accounts/login'):
-                url = None
-            # For donors, don't send to generic profile/home; always use donor dashboard
-            elif getattr(self.request.user, 'is_authenticated', False) and not self.request.user.is_staff:
-                if url_path in ('/accounts/profile', '/home') or url_path.startswith('/accounts/profile/') or url_path.startswith('/home/'):
-                    url = None
-        if not url:
-            if getattr(self.request.user, 'is_authenticated', False) and self.request.user.is_staff:
-                return reverse('admin_dashboard')
-            return reverse('donor_notifications')
-        return url
 
 
 # Blood compatibility matrix - who can donate to whom
@@ -1323,36 +1294,81 @@ def admin_resolve_delay(request, delay_uuid):
     redirect_url = request.META.get('HTTP_REFERER') or reverse('admin_dashboard')
     return redirect(redirect_url)
 
+from urllib.parse import urlencode
+import requests
 
-# ----- Google Sign-In (donor): OAuth2 flow -> create/link user -> redirect to donor dashboard -----
+from django.conf import settings as django_settings
+from django.contrib import messages
+from django.contrib.auth import login, update_session_auth_hash
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import LoginView
+from django.db import transaction
+from django.shortcuts import redirect, render
+from django.utils.crypto import get_random_string
+from django.views.decorators.http import require_http_methods
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
+class DonorLoginView(LoginView):
+    form_class = DonorLoginForm
+    template_name = "registration/login.html"
+    redirect_authenticated_user = True
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["google_oauth_configured"] = bool(
+            getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
+        )
+        return context
+
+    def get_success_url(self):
+        url = super().get_success_url()
+        login_url = reverse("login")
+
+        if url:
+            url_path = (url.split("?")[0] or "").strip().rstrip("/")
+            login_path = login_url.rstrip("/")
+
+            if url_path == login_path or url_path.endswith("/accounts/login"):
+                url = None
+            elif getattr(self.request.user, "is_authenticated", False) and not self.request.user.is_staff:
+                if (
+                    url_path in ("/accounts/profile", "/home")
+                    or url_path.startswith("/accounts/profile/")
+                    or url_path.startswith("/home/")
+                ):
+                    url = None
+
+        if not url:
+            if getattr(self.request.user, "is_authenticated", False) and self.request.user.is_staff:
+                return reverse("admin_dashboard")
+            return reverse("donor_notifications")
+
+        return url
+
+
 def _is_profile_complete(user):
-    """
-    Check if donor profile has been manually completed after Google sign-in.
-    For now we treat profile as 'complete' when phone and blood_group are present.
-    """
     try:
         donor_profile = user.donor_profile
     except DonorProfile.DoesNotExist:
         return False
-    if not donor_profile.phone:
-        return False
-    if not donor_profile.blood_group:
-        return False
-    return True
+
+    return bool(donor_profile.phone and donor_profile.blood_group)
 
 
 def google_login(request):
-    """Redirect user to Google OAuth consent screen. State is stored in session."""
     try:
         client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
-        redirect_uri = django_settings.GOOGLE_REDIRECT_URI
-        logger.info("GOOGLE LOGIN redirect_uri=%s", redirect_uri)
+        redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
+
+        logger.info(
+            "Google login config: client_id=%s redirect_uri=%s",
+            client_id,
+            redirect_uri,
+        )
 
         if not client_id or not redirect_uri:
             messages.error(request, "Google Sign-In is not configured.")
@@ -1370,15 +1386,16 @@ def google_login(request):
             "access_type": "offline",
             "prompt": "select_account",
         }
+
         return redirect(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
+
     except Exception as e:
         logger.exception("Google login redirect failed: %s", e)
         messages.error(request, "Google Sign-In could not start. Please try again.")
         return redirect("donor_register")
 
-def google_callback(request):
-    import requests
 
+def google_callback(request):
     try:
         state = request.GET.get("state")
         code = request.GET.get("code")
@@ -1395,19 +1412,16 @@ def google_callback(request):
 
         client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
         client_secret = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_SECRET", None)
-        redirect_uri = django_settings.GOOGLE_REDIRECT_URI        
+        redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
+
         logger.info(
-                "Google config check: client_id=%s client_secret=%s redirect_uri=%s",
-                bool(client_id),
-                bool(client_secret),
-                redirect_uri,
-            )
+            "Google callback config: client_id_exists=%s client_secret_exists=%s redirect_uri=%s",
+            bool(client_id),
+            bool(client_secret),
+            redirect_uri,
+        )
 
         if not client_id or not client_secret or not redirect_uri:
-            logger.error(
-                "Google config missing: client_id=%s client_secret=%s redirect_uri=%s",
-                bool(client_id), bool(client_secret), redirect_uri
-            )
             messages.error(request, "Google Sign-In is not configured.")
             return redirect("donor_register")
 
@@ -1423,10 +1437,18 @@ def google_callback(request):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10,
         )
-        logger.info("Google token status: %s redirect_uri=%s", token_resp.status_code, redirect_uri)
+
+        logger.info(
+            "Google token request status=%s redirect_uri=%s",
+            token_resp.status_code,
+            redirect_uri,
+        )
+
         if not token_resp.ok:
             logger.error("Google token error response: %s", token_resp.text)
-        token_resp.raise_for_status()
+            messages.error(request, f"Google token error: {token_resp.text}")
+            return redirect("donor_register")
+
         token_json = token_resp.json()
         access_token = token_json.get("access_token")
 
@@ -1440,8 +1462,14 @@ def google_callback(request):
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
         )
+
         logger.info("Google userinfo status: %s", userinfo_resp.status_code)
-        userinfo_resp.raise_for_status()
+
+        if not userinfo_resp.ok:
+            logger.error("Google userinfo error response: %s", userinfo_resp.text)
+            messages.error(request, f"Google userinfo error: {userinfo_resp.text}")
+            return redirect("donor_register")
+
         userinfo = userinfo_resp.json()
 
         email = (userinfo.get("email") or "").strip().lower()
@@ -1458,6 +1486,7 @@ def google_callback(request):
             username = email.split("@")[0].replace(".", "_")[:30]
             base_username = username
             n = 0
+
             while User.objects.filter(username__iexact=username).exists():
                 n += 1
                 username = f"{base_username}{n}"[:30]
@@ -1476,13 +1505,13 @@ def google_callback(request):
                 UserProfile.objects.get_or_create(user=user)
                 DonorProfile.objects.get_or_create(
                     user=user,
-                    defaults={"phone": "", "phone_verified": False}
+                    defaults={"phone": "", "phone_verified": False},
                 )
         else:
             UserProfile.objects.get_or_create(user=user)
             DonorProfile.objects.get_or_create(
                 user=user,
-                defaults={"phone": "", "phone_verified": False}
+                defaults={"phone": "", "phone_verified": False},
             )
 
         login(request, user, backend="django.contrib.auth.backends.ModelBackend")
@@ -1493,122 +1522,137 @@ def google_callback(request):
 
     except Exception as e:
         logger.exception("Google callback crashed: %s", e)
-        messages.error(request, "Google sign-in failed due to a server error.")
+        messages.error(request, f"Google callback crashed: {str(e)}")
         return redirect("donor_register")
 
-
-from django.contrib.auth import update_session_auth_hash  # add at top if you want to keep session valid
 
 @login_required
 @require_http_methods(["GET", "POST"])
 def google_complete_profile(request):
     user = request.user
-    donor_profile, _ = DonorProfile.objects.get_or_create(user=user, defaults={'phone': "", 'phone_verified': False})
+    donor_profile, _ = DonorProfile.objects.get_or_create(
+        user=user,
+        defaults={"phone": "", "phone_verified": False},
+    )
     user_profile, _ = UserProfile.objects.get_or_create(user=user)
 
     from .forms import GoogleProfileCompletionForm
 
     if request.method == "GET":
         initial = {
-            'mobile': donor_profile.phone or "",
-            'gender': user_profile.gender or "",
-            'date_of_birth': user_profile.date_of_birth,
-            'alternate_mobile': user_profile.alternate_mobile or "",
-            'preferred_language': user_profile.preferred_language or "",
-            'preferred_contact_time': user_profile.preferred_contact_time or "",
-            'occupation': user_profile.occupation or "",
-            'emergency_contact_name': user_profile.emergency_contact_name or "",
-            'emergency_contact_number': user_profile.emergency_contact_number or "",
-            'state': user_profile.state or "",
-            'city': user_profile.city or "",
-            'area': user_profile.area or "",
-            'pincode': user_profile.pincode or "",
-            'last_lat': donor_profile.last_lat,
-            'last_lng': donor_profile.last_lng,
-            'weight_kg': user_profile.weight_kg,
-            'donated_before': 'yes' if user_profile.donated_before is True else ('no' if user_profile.donated_before is False else ''),
-            'last_donation_date': user_profile.last_donation_date,
-            'medical_conditions': 'yes' if user_profile.medical_conditions is True else ('no' if user_profile.medical_conditions is False else ''),
-            'currently_healthy': 'yes' if user_profile.currently_healthy is True else ('no' if user_profile.currently_healthy is False else ''),
-            'emergency_available': 'yes' if user_profile.emergency_available else 'no',
-            'preferred_contact': user_profile.preferred_contact or 'call',
-            'consent_contact': user_profile.consent_contact,
-            'consent_terms': user_profile.consent_terms,
-            'blood_group': donor_profile.blood_group or "",
-            # don't set initial password fields
+            "mobile": donor_profile.phone or "",
+            "gender": user_profile.gender or "",
+            "date_of_birth": user_profile.date_of_birth,
+            "alternate_mobile": user_profile.alternate_mobile or "",
+            "preferred_language": user_profile.preferred_language or "",
+            "preferred_contact_time": user_profile.preferred_contact_time or "",
+            "occupation": user_profile.occupation or "",
+            "emergency_contact_name": user_profile.emergency_contact_name or "",
+            "emergency_contact_number": user_profile.emergency_contact_number or "",
+            "state": user_profile.state or "",
+            "city": user_profile.city or "",
+            "area": user_profile.area or "",
+            "pincode": user_profile.pincode or "",
+            "last_lat": donor_profile.last_lat,
+            "last_lng": donor_profile.last_lng,
+            "weight_kg": user_profile.weight_kg,
+            "donated_before": "yes" if user_profile.donated_before is True else ("no" if user_profile.donated_before is False else ""),
+            "last_donation_date": user_profile.last_donation_date,
+            "medical_conditions": "yes" if user_profile.medical_conditions is True else ("no" if user_profile.medical_conditions is False else ""),
+            "currently_healthy": "yes" if user_profile.currently_healthy is True else ("no" if user_profile.currently_healthy is False else ""),
+            "emergency_available": "yes" if user_profile.emergency_available else "no",
+            "preferred_contact": user_profile.preferred_contact or "call",
+            "consent_contact": user_profile.consent_contact,
+            "consent_terms": user_profile.consent_terms,
+            "blood_group": donor_profile.blood_group or "",
         }
         form = GoogleProfileCompletionForm(initial=initial)
-        return render(request, 'registration/google_complete_profile.html', {
-            'form': form,
-            'google_email': user.email,
-            'google_name': user.first_name or user.username,
-        })
+        return render(
+            request,
+            "registration/google_complete_profile.html",
+            {
+                "form": form,
+                "google_email": user.email,
+                "google_name": user.first_name or user.username,
+            },
+        )
 
     form = GoogleProfileCompletionForm(request.POST, request.FILES)
     if not form.is_valid():
-        return render(request, 'registration/google_complete_profile.html', {
-            'form': form,
-            'google_email': user.email,
-            'google_name': user.first_name or user.username,
-        }, status=400)
+        return render(
+            request,
+            "registration/google_complete_profile.html",
+            {
+                "form": form,
+                "google_email": user.email,
+                "google_name": user.first_name or user.username,
+            },
+            status=400,
+        )
 
     data = form.cleaned_data
 
-    # ✅ SET PASSWORD HERE
     password = data.get("password")
     if password:
         user.set_password(password)
         user.save(update_fields=["password"])
-        update_session_auth_hash(request, user)  # keeps them logged in after password change
+        update_session_auth_hash(request, user)
 
-    # Update user profile fields
-    user_profile.gender = data.get('gender') or None
-    user_profile.date_of_birth = data.get('date_of_birth')
-    user_profile.state = data.get('state') or ''
-    user_profile.city = data.get('city') or ''
-    user_profile.area = data.get('area') or ''
-    user_profile.pincode = data.get('pincode') or ''
-    user_profile.weight_kg = data.get('weight_kg')
+    user_profile.gender = data.get("gender") or None
+    user_profile.date_of_birth = data.get("date_of_birth")
+    user_profile.state = data.get("state") or ""
+    user_profile.city = data.get("city") or ""
+    user_profile.area = data.get("area") or ""
+    user_profile.pincode = data.get("pincode") or ""
+    user_profile.weight_kg = data.get("weight_kg")
 
     def _bool_choice_local(val):
-        if not val or val == '':
+        if not val or val == "":
             return None
-        return val.lower() == 'yes'
+        return val.lower() == "yes"
 
-    user_profile.donated_before = _bool_choice_local(data.get('donated_before'))
-    user_profile.last_donation_date = data.get('last_donation_date')
-    user_profile.medical_conditions = _bool_choice_local(data.get('medical_conditions'))
-    user_profile.currently_healthy = _bool_choice_local(data.get('currently_healthy'))
-    user_profile.emergency_available = _bool_choice_local(data.get('emergency_available')) if data.get('emergency_available') else True
-    user_profile.preferred_contact = data.get('preferred_contact') or 'call'
-    user_profile.consent_contact = bool(data.get('consent_contact'))
-    user_profile.consent_terms = bool(data.get('consent_terms'))
-    user_profile.alternate_mobile = data.get('alternate_mobile') or ''
-    user_profile.preferred_language = data.get('preferred_language') or ''
-    user_profile.preferred_contact_time = data.get('preferred_contact_time') or ''
-    user_profile.occupation = data.get('occupation') or ''
-    user_profile.emergency_contact_name = data.get('emergency_contact_name') or ''
-    user_profile.emergency_contact_number = data.get('emergency_contact_number') or ''
-    if data.get('profile_photo'):
-        user_profile.profile_photo = data['profile_photo']
+    user_profile.donated_before = _bool_choice_local(data.get("donated_before"))
+    user_profile.last_donation_date = data.get("last_donation_date")
+    user_profile.medical_conditions = _bool_choice_local(data.get("medical_conditions"))
+    user_profile.currently_healthy = _bool_choice_local(data.get("currently_healthy"))
+    user_profile.emergency_available = (
+        _bool_choice_local(data.get("emergency_available"))
+        if data.get("emergency_available")
+        else True
+    )
+    user_profile.preferred_contact = data.get("preferred_contact") or "call"
+    user_profile.consent_contact = bool(data.get("consent_contact"))
+    user_profile.consent_terms = bool(data.get("consent_terms"))
+    user_profile.alternate_mobile = data.get("alternate_mobile") or ""
+    user_profile.preferred_language = data.get("preferred_language") or ""
+    user_profile.preferred_contact_time = data.get("preferred_contact_time") or ""
+    user_profile.occupation = data.get("occupation") or ""
+    user_profile.emergency_contact_name = data.get("emergency_contact_name") or ""
+    user_profile.emergency_contact_number = data.get("emergency_contact_number") or ""
+
+    if data.get("profile_photo"):
+        user_profile.profile_photo = data["profile_photo"]
+
     user_profile.save()
 
-    donor_profile.phone = data.get('mobile')
-    donor_profile.blood_group = data.get('blood_group') or None
-    update_fields = ['phone', 'blood_group']
-    # Save auto-detected or submitted location to donor profile (for matching)
-    lat, lng = data.get('last_lat'), data.get('last_lng')
+    donor_profile.phone = data.get("mobile")
+    donor_profile.blood_group = data.get("blood_group") or None
+    update_fields = ["phone", "blood_group"]
+
+    lat, lng = data.get("last_lat"), data.get("last_lng")
     if lat is not None and lng is not None:
         donor_profile.last_lat = lat
         donor_profile.last_lng = lng
         donor_profile.location_updated_at = timezone.now()
-        update_fields.extend(['last_lat', 'last_lng', 'location_updated_at'])
-    if data.get('city'):
-        donor_profile.city = data.get('city') or ''
-        update_fields.append('city')
+        update_fields.extend(["last_lat", "last_lng", "location_updated_at"])
+
+    if data.get("city"):
+        donor_profile.city = data.get("city") or ""
+        update_fields.append("city")
+
     donor_profile.save(update_fields=update_fields)
 
-    return redirect('donor_notifications')
+    return redirect("donor_notifications")
 
 # ----- Donor registration (web): form -> OTP verification -> blood group modal -> auto login -----
 
