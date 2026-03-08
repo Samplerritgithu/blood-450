@@ -1413,6 +1413,13 @@ def google_callback(request):
         client_id = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_ID", None)
         client_secret = getattr(django_settings, "GOOGLE_OAUTH_CLIENT_SECRET", None)
         redirect_uri = getattr(django_settings, "GOOGLE_REDIRECT_URI", None)
+                # ✅ ADD THIS DEBUG BLOCK HERE
+        logger.info(
+            "OAUTH DEBUG client_id=%s secret_len=%s redirect_uri=%s",
+            client_id,
+            len(client_secret) if client_secret else None,
+            redirect_uri,
+        )
 
         logger.info(
             "Google callback config: client_id_exists=%s client_secret_exists=%s redirect_uri=%s",
