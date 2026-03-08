@@ -9,6 +9,7 @@ from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
 def _load_dotenv_if_present():
     """
     Lightweight .env loader for local development.
@@ -21,6 +22,7 @@ def _load_dotenv_if_present():
         raw = env_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raw = env_path.read_text(encoding="utf-8-sig")
+
     for line in raw.splitlines():
         s = line.strip()
         if not s or s.startswith("#"):
@@ -37,6 +39,7 @@ def _load_dotenv_if_present():
 
 
 _load_dotenv_if_present()
+
 
 def _make_config():
     try:
@@ -56,6 +59,7 @@ def _make_config():
             return val
         return config
 
+
 config = _make_config()
 
 # ==============================================================================
@@ -67,10 +71,10 @@ SECRET_KEY = config(
     default="django-insecure-38eb&2sar0s=x(93uf$yxu7ab4s!*7$ayf0^z^*70y!8g7)h$b",
 )
 
-# Consider Vercel as production by default
-IS_PRODUCTION = (config("DJANGO_ENV", default="") == "production") or bool(os.environ.get("VERCEL"))
+IS_PRODUCTION = (
+    config("DJANGO_ENV", default="") == "production"
+) or bool(os.environ.get("VERCEL"))
 
-# Default to DEBUG=False in production unless explicitly enabled
 DEBUG = config("DJANGO_DEBUG", default=not IS_PRODUCTION, cast=bool)
 
 ALLOWED_HOSTS = [
@@ -78,7 +82,33 @@ ALLOWED_HOSTS = [
     "localhost",
     ".vercel.app",
 ]
+
+# Trust Vercel / proxy HTTPS
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# ------------------------------------------------------------------------------
+# APP BASE URL
+# ------------------------------------------------------------------------------
+
+_default_base = "http://localhost:8000"
+if os.environ.get("VERCEL"):
+    vercel_url = os.environ.get("VERCEL_URL", "").strip()
+    if vercel_url:
+        _default_base = f"https://{vercel_url.rstrip('/')}"
+
+APP_BASE_URL = config("APP_BASE_URL", default=_default_base).rstrip("/")
+
+# ------------------------------------------------------------------------------
+# GOOGLE OAUTH SETTINGS
+# ------------------------------------------------------------------------------
+
+GOOGLE_OAUTH_CLIENT_ID = config("GOOGLE_OAUTH_CLIENT_ID", default=None)
+GOOGLE_OAUTH_CLIENT_SECRET = config("GOOGLE_OAUTH_CLIENT_SECRET", default=None)
+
+GOOGLE_REDIRECT_URI = config(
+    "GOOGLE_REDIRECT_URI",
+    default=f"{APP_BASE_URL}/register/google/callback/",
+)
 
 # ==============================================================================
 # APPLICATIONS
@@ -104,10 +134,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-
-    "corsheaders.middleware.CorsMiddleware",  # must be before CommonMiddleware
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -139,7 +167,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "AYH.wsgi.application"
 
 # ==============================================================================
-# DATABASE (Supabase / Vercel safe)
+# DATABASE
 # ==============================================================================
 
 import dj_database_url
@@ -157,7 +185,6 @@ if DATABASE_URL:
     DATABASES["default"].setdefault("OPTIONS", {})
     DATABASES["default"]["OPTIONS"]["sslmode"] = "require"
 else:
-    # Local fallback only
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -165,7 +192,6 @@ else:
         }
     }
 
-# Force DATABASE_URL on Vercel (prevents accidental sqlite in prod)
 if os.environ.get("VERCEL") and not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is missing on Vercel. Add it in Vercel env vars.")
 
@@ -194,21 +220,17 @@ USE_TZ = True
 # ==============================================================================
 
 STATIC_URL = "/static/"
-
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 STATICFILES_DIRS = [
     BASE_DIR / "careapp" / "static",
 ]
 
-
 if os.environ.get("VERCEL"):
-    # On Vercel, avoid manifest lookups if collectstatic isn't persisted.
     STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
 else:
     STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-# Allow WhiteNoise to serve directly from app static dirs when needed
 WHITENOISE_USE_FINDERS = True
 
 MEDIA_URL = "/media/"
@@ -217,7 +239,7 @@ MEDIA_ROOT = str(BASE_DIR / "media")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ==============================================================================
-# AUTH / LOGIN ROUTES (keep ONE set)
+# AUTH / LOGIN ROUTES
 # ==============================================================================
 
 LOGIN_URL = "/accounts/login/"
@@ -225,19 +247,17 @@ LOGIN_REDIRECT_URL = "/home/"
 LOGOUT_REDIRECT_URL = "/accounts/login/"
 
 # ==============================================================================
-# SESSIONS (Lifetime login)
+# SESSIONS / COOKIES / CSRF
 # ==============================================================================
 
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
-SESSION_COOKIE_AGE = 60 * 60 * 24 * 365  # 1 year
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 365
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 
-# Cookies: secure only on HTTPS/production
 SESSION_COOKIE_SECURE = IS_PRODUCTION
 CSRF_COOKIE_SECURE = IS_PRODUCTION
 
-# If production and your frontend is on another domain, you need SameSite=None + Secure
 SESSION_COOKIE_SAMESITE = "None" if IS_PRODUCTION else "Lax"
 CSRF_COOKIE_SAMESITE = "None" if IS_PRODUCTION else "Lax"
 
@@ -247,22 +267,13 @@ CSRF_COOKIE_AGE = 31449600
 CSRF_COOKIE_DOMAIN = None
 CSRF_COOKIE_PATH = "/"
 
-# Build CSRF trusted origins: localhost + Vercel wildcard + explicit production URL
-_CSRF_ORIGINS = [
+CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
     "https://*.vercel.app",
+    APP_BASE_URL,
 ]
-# Add exact production URL so cookies/redirects and admin login work on Vercel
-_APP_BASE = config("APP_BASE_URL", default="").strip().rstrip("/")
-if _APP_BASE and (_APP_BASE.startswith("https://") or _APP_BASE.startswith("http://")):
-    _CSRF_ORIGINS.append(_APP_BASE)
-# When on Vercel, also trust VERCEL_URL so we don't rely on APP_BASE_URL being set
-if os.environ.get("VERCEL"):
-    _vurl = os.environ.get("VERCEL_URL", "").strip()
-    if _vurl:
-        _CSRF_ORIGINS.append(f"https://{_vurl.rstrip('/')}")
-CSRF_TRUSTED_ORIGINS = _CSRF_ORIGINS
+
 CSRF_FAILURE_VIEW = "django.views.csrf.csrf_failure"
 
 # ==============================================================================
@@ -348,7 +359,7 @@ CORS_ALLOW_HEADERS = [
 ]
 
 # ==============================================================================
-# CACHE (for OTP and similar)
+# CACHE
 # ==============================================================================
 
 CACHES = {
@@ -357,41 +368,22 @@ CACHES = {
     }
 }
 
-# OTP SMS (registration) – set in .env to send real OTP to mobile
-# Options: "console" (log only), "twilio", "twilio_verify" (use Service SID, no from number), "msg91", "fast2sms"
+# ==============================================================================
+# OTP / SMS SETTINGS
+# ==============================================================================
+
 OTP_SMS_BACKEND = config("OTP_SMS_BACKEND", default="console")
-# Fast2SMS (India): get API key from https://www.fast2sms.com/
+
 FAST2SMS_API_KEY = config("FAST2SMS_API_KEY", default=None)
-# Twilio (global): for "twilio" use FROM_NUMBER; for "twilio_verify" use VERIFY_SERVICE_SID only
+
 TWILIO_ACCOUNT_SID = config("TWILIO_ACCOUNT_SID", default=None)
 TWILIO_AUTH_TOKEN = config("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_FROM_NUMBER = config("TWILIO_FROM_NUMBER", default=None)
 TWILIO_VERIFY_SERVICE_SID = config("TWILIO_VERIFY_SERVICE_SID", default=None)
-# MSG91 (India): MSG91_AUTH_KEY, optional MSG91_OTP_TEMPLATE_ID
+
 MSG91_AUTH_KEY = config("MSG91_AUTH_KEY", default=None)
 MSG91_OTP_TEMPLATE_ID = config("MSG91_OTP_TEMPLATE_ID", default=None)
 
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-
-# On Vercel, default to deployment URL so OAuth redirect/callback and CSRF work
-_default_base = "http://localhost:8000"
-if os.environ.get("VERCEL"):
-    _vercel_url = os.environ.get("VERCEL_URL", "").strip()
-    if _vercel_url:
-        _default_base = f"https://{_vercel_url.rstrip('/')}"
-
-
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-
-APP_BASE_URL = config("APP_BASE_URL", default="http://localhost:8000").rstrip("/")
-
-GOOGLE_OAUTH_CLIENT_ID = config("GOOGLE_OAUTH_CLIENT_ID", default=None)
-GOOGLE_OAUTH_CLIENT_SECRET = config("GOOGLE_OAUTH_CLIENT_SECRET", default=None)
-
-GOOGLE_REDIRECT_URI = config(
-    "GOOGLE_REDIRECT_URI",
-    default=f"{APP_BASE_URL}/register/google/callback/",
-)
 # ==============================================================================
 # BLOOD REQUEST LOCATION
 # ==============================================================================
