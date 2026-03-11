@@ -17,9 +17,10 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.views.generic import RedirectView
 from careapp.views import DonorLoginView
+from careapp import api_views as careapp_api_views
 
 urlpatterns = [
     # Django Admin
@@ -30,6 +31,8 @@ urlpatterns = [
     path('accounts/', include('django.contrib.auth.urls')),
     path('login/', RedirectView.as_view(url='/accounts/login/', permanent=False), name='login_alias'),
     
+    # Public API root: GET /api/ or GET /api returns 200 (no auth). Must be before path('api/', include(...)).
+    re_path(r'^api/?$', careapp_api_views.public_api_root, name='api-root-public'),
     # REST API Endpoints (for Flutter)
     path('api/', include('careapp.api_urls')),
     

@@ -4,19 +4,20 @@ REST API endpoints for Flutter mobile app
 """
 
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import api_views
 
-# Create router for ViewSets
-router = DefaultRouter()
+# SimpleRouter: no API root view, so GET /api/ is handled only by public_api_root (no 401)
+router = SimpleRouter()
 router.register(r'donors', api_views.DonorProfileViewSet, basename='donor')
 router.register(r'blood-requests', api_views.BloodRequestViewSet, basename='blood-request')
 router.register(r'notifications', api_views.NotificationViewSet, basename='notification')
 
-# API URL patterns
+# API URL patterns (public root first so GET /api/ returns 200, not 401)
 urlpatterns = [
+    path('', api_views.public_api_root, name='api-root'),
     # ==============================================================================
     # AUTHENTICATION ENDPOINTS
     # ==============================================================================

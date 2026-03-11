@@ -39,6 +39,26 @@ from .views import get_compatible_blood_groups  # Import blood compatibility log
 
 
 # ==============================================================================
+# API ROOT (public – so /api/ in browser shows info instead of 401)
+# ==============================================================================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_api_root(request):
+    """
+    Public API root. GET /api/ returns this so the URL works in a browser.
+    """
+    return Response({
+        'name': 'AYH Blood Donation API',
+        'message': 'Use the mobile app or call auth/data endpoints. Authentication required for most endpoints.',
+        'auth': {
+            'login': '/api/auth/login/',
+            'register': '/api/auth/register/',
+        },
+    }, status=status.HTTP_200_OK)
+
+
+# ==============================================================================
 # AUTHENTICATION VIEWS
 # ==============================================================================
 
