@@ -97,12 +97,10 @@ class DonorProfileCreateSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
     
     def validate_phone(self, value):
-        """Validate phone number format"""
-        if not value.startswith('+'):
-            raise serializers.ValidationError("Phone number must start with country code (e.g., +1)")
-        if len(value) < 10:
-            raise serializers.ValidationError("Phone number is too short")
-        return value
+        """Accept any non-empty phone (allow all formats)."""
+        if not value or not str(value).strip():
+            raise serializers.ValidationError("Phone number is required")
+        return str(value).strip()
     
     def validate_last_lat(self, value):
         """Donor latitude must be between -90 and 90 when provided."""

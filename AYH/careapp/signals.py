@@ -1,17 +1,14 @@
-from django.apps import AppConfig
+"""Ensure default admin user (admin/admin) exists after migrations."""
+from django.db.models.signals import post_migrate
+from django.dispatch import receiver
+from django.contrib.auth.models import User
 
 
-class CareappConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'careapp'
-
-    def ready(self):
-        import careapp.signals  # noqa: F401 - register post_migrate to ensure admin user
-        # Also ensure admin on startup (in case migrate was run earlier)
-        _ensure_admin_user()
-
-def _ensure_admin_user():
-    from django.contrib.auth.models import User
+@receiver(post_migrate)
+def ensure_admin_user(sender, **kwargs):
+    """Create or reset admin user (username: admin, password: admin) after migrations."""
+    if sender.name != "careapp":
+        return
     try:
         if User.objects.filter(username="admin").exists():
             user = User.objects.get(username="admin")

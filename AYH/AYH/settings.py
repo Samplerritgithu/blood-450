@@ -77,11 +77,7 @@ IS_PRODUCTION = (
 
 DEBUG = config("DJANGO_DEBUG", default=not IS_PRODUCTION, cast=bool)
 
-ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "localhost",
-    ".vercel.app",
-]
+ALLOWED_HOSTS = ["*"]
 
 # Trust Vercel / proxy HTTPS
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -218,7 +214,6 @@ USE_TZ = True
 # ==============================================================================
 # STATIC / MEDIA
 # ==============================================================================
-
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
@@ -298,12 +293,11 @@ REST_FRAMEWORK = {
         "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
     ],
+    # Only throttle authenticated users; allow register/login without rate limit
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "100/hour",
         "user": "1000/hour",
     },
     "DATETIME_FORMAT": "%Y-%m-%d %H:%M:%S",
