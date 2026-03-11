@@ -494,10 +494,12 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                             ),
                             validator: _useLocation
                                 ? (v) {
-                                    if (v?.trim().isEmpty ?? true)
+                                    if (v?.trim().isEmpty ?? true) {
                                       return 'Required when using location';
-                                    if (double.tryParse(v!.trim()) == null)
+                                    }
+                                    if (double.tryParse(v!.trim()) == null) {
                                       return 'Invalid number';
+                                    }
                                     return null;
                                   }
                                 : null,
@@ -518,10 +520,12 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                             ),
                             validator: _useLocation
                                 ? (v) {
-                                    if (v?.trim().isEmpty ?? true)
+                                    if (v?.trim().isEmpty ?? true) {
                                       return 'Required when using location';
-                                    if (double.tryParse(v!.trim()) == null)
+                                    }
+                                    if (double.tryParse(v!.trim()) == null) {
                                       return 'Invalid number';
+                                    }
                                     return null;
                                   }
                                 : null,
@@ -560,8 +564,9 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                       validator: _useLocation
                           ? (v) {
                               final r = double.tryParse(v?.trim() ?? '');
-                              if (r == null || r < 0.1 || r > 500)
+                              if (r == null || r < 0.1 || r > 500) {
                                 return 'Enter 0.1–500';
+                              }
                               return null;
                             }
                           : null,

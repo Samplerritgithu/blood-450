@@ -122,7 +122,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 onPressed: () => Navigator.of(context).pop(),
                                 icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
                                 style: IconButton.styleFrom(
-                                  backgroundColor: Colors.white.withOpacity(0.12),
+                                  backgroundColor: Colors.white.withOpacity(0.19),
                                   alignment: Alignment.centerLeft,
                                 ),
                               ),

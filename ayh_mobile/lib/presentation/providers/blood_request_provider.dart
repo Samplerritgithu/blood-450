@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../data/repositories/blood_request_repository.dart';
-import '../../data/models/blood_request.dart' show BloodRequest, MatchedDonor;
+import '../../data/models/blood_request.dart' show BloodRequest;
 
 class BloodRequestProvider with ChangeNotifier {
   final BloodRequestRepository _repository = BloodRequestRepository();

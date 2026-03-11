@@ -88,8 +88,9 @@ class BloodRequestService {
       };
       if (reqLat != null) data['req_lat'] = reqLat;
       if (reqLng != null) data['req_lng'] = reqLng;
-      if (locationName != null && locationName.isNotEmpty)
+      if (locationName != null && locationName.isNotEmpty) {
         data['location_name'] = locationName;
+      }
       if (radiusKm != null) data['radius_km'] = radiusKm;
 
       final response = await _apiClient.post(

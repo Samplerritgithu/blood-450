@@ -8,13 +8,21 @@ import 'presentation/providers/dashboard_provider.dart';
 import 'presentation/screens/splash/splash_screen.dart';
 import 'data/services/storage_service.dart';
 import 'core/constants/app_colors.dart';
+import 'core/config/app_environment.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize storage
+
   await StorageService().init();
-  
+
+  if (AppEnvironment.isSupabaseConfigured) {
+    await Supabase.initialize(
+      url: AppEnvironment.supabaseUrl,
+      anonKey: AppEnvironment.supabaseAnonKey,
+    );
+  }
+
   runApp(const MyApp());
 }
 

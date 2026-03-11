@@ -206,8 +206,9 @@ class AdminRequestDetailSheet extends StatelessWidget {
               ...(request.notifiedDonors!.map((d) {
                 final parts = <String>[];
                 if (d.bloodGroup != null) parts.add(d.bloodGroup!);
-                if (d.distanceKm != null)
+                if (d.distanceKm != null) {
                   parts.add('${d.distanceKm!.toStringAsFixed(1)} km');
+                }
                 return Card(
                   margin: const EdgeInsets.only(bottom: 6),
                   child: ListTile(
@@ -265,8 +266,9 @@ class AdminRequestDetailSheet extends StatelessWidget {
                 final parts = <String>[];
                 if (d.phone != null && d.phone!.isNotEmpty) parts.add(d.phone!);
                 if (d.bloodGroup != null) parts.add(d.bloodGroup!);
-                if (d.distanceKm != null)
+                if (d.distanceKm != null) {
                   parts.add('${d.distanceKm!.toStringAsFixed(1)} km away');
+                }
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(

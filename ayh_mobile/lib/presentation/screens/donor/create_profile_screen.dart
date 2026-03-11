@@ -210,29 +210,27 @@ class _CreateProfileScreenState extends State<CreateProfileScreen> {
                   ),
                   const SizedBox(height: 24),
 
+                  // Phone: allow all characters (no format or length restriction)
                   TextFormField(
                     controller: _phoneController,
-                    keyboardType: TextInputType.phone,
+                    keyboardType: TextInputType.text,
                     decoration: InputDecoration(
                       labelText: 'Phone Number *',
-                      hintText: '+1234567890',
+                      hintText: 'Enter phone number',
                       prefixIcon: const Icon(Icons.phone),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     validator: (value) {
-                      if (value?.isEmpty ?? true) return 'Required';
-                      if (!value!.startsWith('+'))
-                        return 'Must start with country code (+)';
-                      if (value.length < 10) return 'Invalid phone number';
+                      if (value?.trim().isEmpty ?? true) return 'Required';
                       return null;
                     },
                   ),
                   const SizedBox(height: 16),
 
                   DropdownButtonFormField<String>(
-                    value: _selectedBloodGroup,
+                    initialValue: _selectedBloodGroup,
                     decoration: InputDecoration(
                       labelText: 'Blood Group *',
                       prefixIcon: const Icon(Icons.bloodtype),

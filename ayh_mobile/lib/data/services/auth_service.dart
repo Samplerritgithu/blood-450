@@ -33,7 +33,12 @@ class AuthService {
       return {'success': false, 'error': 'Login failed'};
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
-        return {'success': false, 'error': 'Invalid username or password'};
+        final msg = _getErrorMessage(e.response?.data);
+        return {'success': false, 'error': msg ?? 'Invalid username or password'};
+      }
+      if (e.response?.statusCode == 429) {
+        final msg = _getErrorMessage(e.response?.data);
+        return {'success': false, 'error': msg ?? 'Too many attempts. Please try again later.'};
       }
       if (e.type == DioExceptionType.connectionError ||
           e.type == DioExceptionType.connectionTimeout ||
@@ -44,7 +49,8 @@ class AuthService {
           'error': 'Cannot reach server. Run backend with: python manage.py runserver 0.0.0.0:8000',
         };
       }
-      return {'success': false, 'error': e.response?.data?['detail'] ?? 'Login failed'};
+      final msg = _getErrorMessage(e.response?.data);
+      return {'success': false, 'error': msg ?? 'Login failed'};
     } catch (e) {
       return {'success': false, 'error': 'Login failed. Please try again.'};
     }
@@ -81,10 +87,36 @@ class AuthService {
           'message': data['message'],
         };
       }
-      return {'success': false, 'error': 'Registration failed'};
+      final msg = _getErrorMessage(response.data);
+      return {'success': false, 'error': msg ?? 'Registration failed'};
     } catch (e) {
+      if (e is DioException && e.response != null) {
+        final msg = _getErrorMessage(e.response?.data);
+        return {'success': false, 'error': msg ?? e.toString()};
+      }
       return {'success': false, 'error': e.toString()};
     }
+  }
+
+  /// Read error message from API response (supports 'error', 'detail', or Django field errors).
+  static String? _getErrorMessage(dynamic data) {
+    if (data == null) return null;
+    if (data is String) return data;
+    if (data is Map) {
+      if (data['error'] != null) return data['error'].toString();
+      if (data['detail'] != null) {
+        final d = data['detail'];
+        if (d is String) return d;
+        if (d is List && d.isNotEmpty) return d.map((e) => e.toString()).join(' ');
+      }
+      // Django serializer errors: {"username": ["..."], "email": ["..."]}
+      for (final key in data.keys) {
+        final v = data[key];
+        if (v is List && v.isNotEmpty) return v.map((e) => e.toString()).join(' ');
+        if (v is String) return v;
+      }
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>> getCurrentUser() async {

@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Production env (Supabase URL/key) – do not commit
+env_prod.env
