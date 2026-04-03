@@ -7,8 +7,6 @@ class CareappConfig(AppConfig):
 
     def ready(self):
         import careapp.signals  # noqa: F401 - register post_migrate to ensure admin user
-        # Also ensure admin on startup (in case migrate was run earlier)
-        _ensure_admin_user()
 
 def _ensure_admin_user():
     from django.contrib.auth.models import User

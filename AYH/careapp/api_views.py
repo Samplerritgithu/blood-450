@@ -12,6 +12,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db import transaction, IntegrityError
 from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
 
 from django.conf import settings as django_settings
 
@@ -46,8 +47,44 @@ from .views import get_compatible_blood_groups  # Import blood compatibility log
 @permission_classes([AllowAny])
 def public_api_root(request):
     """
-    Public API root. GET /api/ returns this so the URL works in a browser.
+    Public API root. GET /api/ returns HTML in browser, JSON for API clients.
     """
+    accept = request.META.get('HTTP_ACCEPT', '')
+    wants_html = 'text/html' in accept
+
+    if wants_html:
+        html = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AYH Blood Donation API</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 2rem; background: #f5f5f5; color: #333; }
+        .card { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        h1 { margin: 0 0 0.5rem; font-size: 1.5rem; color: #c41e3a; }
+        p { margin: 0 0 1rem; line-height: 1.5; color: #555; }
+        .links { margin-top: 1.5rem; }
+        .links a { display: inline-block; margin-right: 1rem; margin-bottom: 0.5rem; color: #c41e3a; text-decoration: none; font-weight: 500; }
+        .links a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>AYH Blood Donation API</h1>
+        <p>Use the mobile app or call the auth and data endpoints. Most endpoints require authentication.</p>
+        <div class="links">
+            <a href="/api/auth/login/">Login</a>
+            <a href="/api/auth/register/">Register</a>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        return HttpResponse(html.strip(), content_type='text/html; charset=utf-8')
+
     return Response({
         'name': 'AYH Blood Donation API',
         'message': 'Use the mobile app or call auth/data endpoints. Authentication required for most endpoints.',

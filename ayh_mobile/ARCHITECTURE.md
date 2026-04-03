@@ -1,6 +1,6 @@
-# Blood Bank Management System – Dual-backend architecture
+# Blood Bank Management System – Architecture
 
-This document describes how the **Android (Flutter)** app supports both **Django (development)** and **Supabase (production)** backends, and how it fits with the website.
+This document describes how the **Android (Flutter)** app and the **website** work with the backend.
 
 ---
 
@@ -8,205 +8,66 @@ This document describes how the **Android (Flutter)** app supports both **Django
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        LOCAL DEVELOPMENT                                 │
+│  Flutter app (APK / Play Store)  ──────►  Django REST API (Vercel)      │
+│                                                    │                     │
+│                                                    ▼                     │
+│                                            Supabase (PostgreSQL)         │
+│                                            = database only               │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  Flutter app  ──────►  Django REST API  ──────►  Database (SQLite/Pg)   │
-│  (emulator/device)       (localhost:8000)                                │
-└─────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        PRODUCTION                                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Flutter app  ──────►  Supabase (Auth + Postgres + Realtime)             │
-│  (Play Store)              ▲                                            │
-│                            │                                             │
-│  Website (Django)  ────────┘  (Vercel → Supabase)                       │
+│  Website (Django on Vercel)  ──────────────────────►  same Supabase DB   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Local:** Flutter uses **Django** on your machine for auth and data.
-- **Production:** Flutter uses **Supabase** directly; the website (Django on Vercel) also uses **Supabase** for the database (and optionally auth).
+- **Flutter app:** One APK. Always calls the **Django API** hosted on Vercel (`https://blood-450-gqkc.vercel.app/api/`). No direct Supabase connection from the app.
+- **Django (Vercel):** Serves the website and the REST API. Uses **Supabase** as its database via `DATABASE_URL`.
+- **Supabase:** Database only (PostgreSQL). No Supabase Auth or client SDK in the Flutter app.
 
 ---
 
-## Configuration strategy
+## Configuration
 
-### Flutter app – compile-time backend switch
+### Flutter app
 
-The app chooses the backend at **build time** via Dart compile-time constants (`--dart-define`):
+- **API base URL** is set in `lib/core/constants/api_constants.dart`:
+  - `baseUrl = 'https://blood-450-gqkc.vercel.app/api/'`
+- Change this constant if your Vercel project URL is different.
+- No `--dart-define`, env files, or backend switching. One build works everywhere.
 
-| Variable            | Description                    | Development      | Production                          |
-|--------------------|--------------------------------|------------------|-------------------------------------|
-| `USE_SUPABASE`     | Use Supabase backend           | `false` (default)| `true`                              |
-| `SUPABASE_URL`     | Supabase project URL           | (empty)          | `https://xxx.supabase.co`          |
-| `SUPABASE_ANON_KEY`| Supabase anon (public) key     | (empty)          | Set in CI / secure env, not in repo |
+### Django (Vercel)
 
-- **Development (default):** no dart-defines → Django base URL from `api_constants.dart` (e.g. `http://10.0.2.2:8000/api/` for Android emulator).
-- **Production:** pass all three so the app uses Supabase for auth and data.
-
-**Do not commit `SUPABASE_ANON_KEY` (or any secret) to the repo.** Use CI secrets or a local `--dart-define-from-file` that is gitignored.
+- Set **Vercel environment variables** for the Django project (see `AYH/DEPLOY_VERCEL.md`), including:
+  - `DATABASE_URL` – Supabase PostgreSQL connection string (use pooling URI from Supabase dashboard).
+  - Other keys (e.g. `SECRET_KEY`, `APP_BASE_URL`, Google OAuth if used).
 
 ---
 
 ## Build commands
 
-### Run locally (Django backend)
+### Run locally
 
 ```bash
 # From ayh_mobile/
 flutter run
-# Uses Django API; ensure Django is running: cd AYH && python manage.py runserver 0.0.0.0:8000
 ```
 
-For a **physical device** on the same network, set `baseUrlOverride` in `lib/core/constants/api_constants.dart` to your PC’s IP (e.g. `http://192.168.1.5:8000/api/`).
+The app will call the **Vercel** API. No local Django needed unless you want to test against a local server (in that case, temporarily change `baseUrl` in `api_constants.dart` to your local URL, e.g. `http://10.0.2.2:8000/api/` for Android emulator).
 
-### Build for production (Supabase backend)
+### Build APK or App Bundle (Play Store)
 
 ```bash
 # From ayh_mobile/
-flutter build apk --dart-define=USE_SUPABASE=true \
-  --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
-  --dart-define=SUPABASE_ANON_KEY=your_anon_key
+flutter build apk
+# or
+flutter build appbundle
 ```
 
-For App Bundle (Play Store):
-
-```bash
-flutter build appbundle --dart-define=USE_SUPABASE=true \
-  --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
-  --dart-define=SUPABASE_ANON_KEY=your_anon_key
-```
-
-Using a **define file** (recommended on Windows; avoids truncating the anon key):
-
-1. Copy `env_prod.env.example` to `env_prod.env`.
-2. Edit `env_prod.env` and set your real `SUPABASE_URL` and `SUPABASE_ANON_KEY` (one value per line, no quotes).
-3. Build:
-
-```bash
-flutter build apk --dart-define-from-file=env_prod.env
-```
-
-**Why use a file?** On Windows (PowerShell/CMD), passing the anon key with `--dart-define=SUPABASE_ANON_KEY=eyJ...` can truncate the value at special characters (e.g. `=` in the JWT). Using `--dart-define-from-file` avoids that and fixes "Failed host lookup" or auth errors after build.
+No extra flags. The APK/AAB uses the Vercel Django API; Supabase is only used by Django on the server.
 
 ---
 
-## Supabase schema (production app)
+## Database (Supabase)
 
-For the **production** Flutter app, Supabase is used for:
-
-1. **Auth** – Supabase Auth (email/password).
-2. **Data** – Postgres tables exposed via PostgREST.
-
-Create these in the Supabase SQL editor (Dashboard → SQL) so the app works in production:
-
-```sql
--- donor_profiles: one per app user (user_id = auth.uid())
-create table if not exists public.donor_profiles (
-  id bigint generated by default as identity primary key,
-  user_id uuid references auth.users(id) on delete cascade not null unique,
-  phone text default '',
-  blood_group text not null,
-  is_available boolean default true,
-  last_lat double precision,
-  last_lng double precision,
-  location_updated_at timestamptz,
-  created_at timestamptz default now()
-);
-
--- blood_requests: created_by = auth.uid() for app-created requests
-create table if not exists public.blood_requests (
-  id bigint generated by default as identity primary key,
-  created_by uuid references auth.users(id),
-  blood_group text not null,
-  units_needed int not null default 1,
-  urgency text not null default 'normal',
-  urgency_display text default 'Normal',
-  note text default '',
-  is_active boolean default true,
-  req_lat double precision,
-  req_lng double precision,
-  location_name text,
-  radius_km double precision default 10,
-  notified_count int default 0,
-  accepted_count int default 0,
-  created_at timestamptz default now()
-);
-
--- donor_notifications: links donor to blood request and response
-create table if not exists public.donor_notifications (
-  id bigint generated by default as identity primary key,
-  donor_id uuid references auth.users(id) on delete cascade not null,
-  blood_request_id bigint references public.blood_requests(id) on delete cascade not null,
-  is_read boolean default false,
-  has_responded boolean default false,
-  response_status text,
-  responded_at timestamptz,
-  distance_km double precision,
-  created_at timestamptz default now(),
-  unique(blood_request_id, donor_id)
-);
-
--- donor_responses: record accept/reject
-create table if not exists public.donor_responses (
-  id bigint generated by default as identity primary key,
-  blood_request_id bigint references public.blood_requests(id) on delete cascade not null,
-  donor_id uuid references auth.users(id) on delete cascade not null,
-  response text not null,
-  created_at timestamptz default now(),
-  unique(blood_request_id, donor_id)
-);
-
--- RLS (optional but recommended)
-alter table public.donor_profiles enable row level security;
-alter table public.blood_requests enable row level security;
-alter table public.donor_notifications enable row level security;
-alter table public.donor_responses enable row level security;
-
-create policy "Users can manage own donor_profile"
-  on public.donor_profiles for all using (auth.uid() = user_id);
-
-create policy "Anyone can read blood_requests"
-  on public.blood_requests for select using (true);
-create policy "Authenticated can insert blood_requests"
-  on public.blood_requests for insert with check (auth.uid() = created_by);
-create policy "Creator can update/delete own blood_requests"
-  on public.blood_requests for all using (auth.uid() = created_by);
-
-create policy "Donors see own notifications"
-  on public.donor_notifications for all using (auth.uid() = donor_id);
-
-create policy "Donors manage own responses"
-  on public.donor_responses for all using (auth.uid() = donor_id);
-```
-
----
-
-## Auth: development vs production
-
-| Aspect        | Development (Django)     | Production (Supabase)      |
-|---------------|--------------------------|----------------------------|
-| Login         | Username + password      | **Email** + password       |
-| Register      | Username, email, password| Email, password (+ metadata)|
-| Session       | JWT in secure storage    | Supabase session (handled by SDK) |
-
-**Production (Supabase):** Users must sign in with the **email** they registered with. The app accepts the same login form; if the value contains `@`, it is treated as email.
-
----
-
-## Website (Django on Vercel)
-
-- The **website** stays on **Vercel** and continues to use **Django** for routing, auth (Django auth or Supabase if you migrate), and business logic.
-- It connects to the **same Supabase Postgres** (or a separate DB) via `DATABASE_URL`. For a single system, point both Django (Vercel) and the Flutter app (production) at the same Supabase project: Django uses the DB; the app uses Supabase Auth + same tables above (or shared schema if you align table names with Django).
-
----
-
-## Data consistency and maintainability
-
-1. **Single source of truth in production:** Supabase Postgres. Flutter (prod) and Django (website) can both use it; align table/schema if you want shared data.
-2. **Env parity:** Use the same Supabase project for staging and production (or separate projects with the same schema).
-3. **Secrets:** Keep `SUPABASE_ANON_KEY` and any service role keys out of the repo; use environment variables or CI secrets.
-4. **Code:** All backend switching is in `lib/core/config/app_environment.dart` and the repository layer; UI and providers stay backend-agnostic.
+Supabase is the **database** for the Django project. Django connects via `DATABASE_URL`. Tables and schema are managed by Django (migrations). You do not need to create Supabase tables by hand for the app; Django’s models and migrations define the schema.
 
 ---
 
@@ -216,60 +77,26 @@ create policy "Donors manage own responses"
 ayh_mobile/
 ├── lib/
 │   ├── core/
-│   │   ├── config/
-│   │   │   └── app_environment.dart   # USE_SUPABASE, SUPABASE_URL, SUPABASE_ANON_KEY
-│   │   ├── api/
-│   │   │   └── api_client.dart       # Used only when Django backend
 │   │   └── constants/
-│   │       └── api_constants.dart    # Django base URL (dev)
+│   │       └── api_constants.dart   # baseUrl = Vercel Django API
 │   ├── data/
-│   │   ├── services/
-│   │   │   ├── auth_service.dart     # Django auth
+│   │   ├── services/                # Django API clients only
+│   │   │   ├── auth_service.dart
 │   │   │   ├── donor_service.dart
-│   │   │   ├── ...
-│   │   │   └── supabase/
-│   │   │       ├── supabase_auth_service.dart
-│   │   │       ├── supabase_donor_service.dart
-│   │   │       ├── supabase_blood_request_service.dart
-│   │   │       ├── supabase_notification_service.dart
-│   │   │       ├── supabase_dashboard_service.dart
-│   │   │       └── supabase_response_service.dart
-│   │   └── repositories/             # Switch Django vs Supabase here
-│   └── main.dart                     # Initializes Supabase when configured
-├── ARCHITECTURE.md                   # This file
-└── env_prod.env.example              # Example define file (no real keys)
+│   │   │   └── ...
+│   │   └── repositories/           # All use Django services
+│   └── main.dart
+└── ARCHITECTURE.md
 ```
-
----
-
-## Troubleshooting: "Failed host lookup" / "No address associated with hostname"
-
-This usually means the **device cannot resolve the Supabase hostname** (DNS) or has no internet.
-
-1. **Use an env file to build (Windows)**  
-   The anon key contains `=` characters; the shell can truncate it. Build with:
-   ```bash
-   flutter build apk --dart-define-from-file=env_prod.env
-   ```
-   and put your real values in `env_prod.env` (no quotes, one per line).
-
-2. **Ensure the device has internet**  
-   Try mobile data if Wi‑Fi has DNS or firewall issues. Open a browser on the device and confirm you can load `https://nodexefunevldccknmen.supabase.co`.
-
-3. **Android permissions**  
-   The app needs `INTERNET` and `ACCESS_NETWORK_STATE` in `AndroidManifest.xml` (already added). Rebuild the APK after any manifest change.
-
-4. **Emulator**  
-   If testing on an emulator, use an image with Google Play / Google APIs and ensure the emulator has network access.
 
 ---
 
 ## Quick reference
 
-| Goal                         | Action |
-|-----------------------------|--------|
-| Dev: run app vs Django      | `flutter run` (Django on `0.0.0.0:8000`) |
-| Prod: build APK with Supabase | `flutter build apk --dart-define=USE_SUPABASE=true --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...` |
-| Prod: build AAB for Play Store | Same as above with `flutter build appbundle` |
-| Add Supabase tables         | Run the SQL above in Supabase Dashboard → SQL |
-| Keep keys safe              | Use `--dart-define-from-file` with a gitignored file or CI secrets |
+| Goal                    | Action |
+|-------------------------|--------|
+| Run app                 | `flutter run` |
+| Build APK               | `flutter build apk` |
+| Build for Play Store    | `flutter build appbundle` |
+| Change API URL          | Edit `baseUrl` in `lib/core/constants/api_constants.dart` |
+| Database / backend config | Configure Django on Vercel (env vars); Supabase = DB only |
